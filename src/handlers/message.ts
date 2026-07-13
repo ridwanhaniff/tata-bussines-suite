@@ -179,7 +179,23 @@ async function executeStockAdjustment(
       `${stockManager.formatQty(d.stockBefore, d.product.unit)} ${d.product.unit} → ` +
       `${stockManager.formatQty(d.stockAfter, d.product.unit)} ${d.product.unit}${bomText}`,
   );
+  await warnDemoLimitAfterTx(msg, user);
   return true;
+}
+
+async function warnDemoLimitAfterTx(msg: any, user: any): Promise<void> {
+  if (user?.status !== 'demo') return;
+  try {
+    const count = await getDailyTransactionCount(user.id);
+    if (count >= 5) {
+      await safeReply(
+        msg,
+        `⚠️ *Peringatan Batas Demo*\n\nHari ini sudah *${count} transaksi* dari maksimal *5 transaksi/hari*.\n💡 Ketik *Paket* untuk upgrade ke PRO agar transaksi tanpa batas! 🚀`,
+      );
+    }
+  } catch (_: any) {
+    /* silent */
+  }
 }
 
 async function showUpgradeMenu(msg: any, user: any, effectiveStatus: string): Promise<void> {
@@ -1113,6 +1129,7 @@ async function handleMessage(msg: any, client: any): Promise<any> {
               msg,
               `${emoji} *Berhasil Dicatat!*\n\n${tipeLabel}\n💵 Jumlah : ${formatRupiah(txConf.amount)}\n📦 Produk : ${txConf.product!.name}\n📝 Ket    : ${txConf.description}${extraInfo}`,
             );
+            await warnDemoLimitAfterTx(msg, { id: sender, status: txConf.effectiveStatus });
             return;
           }
           await safeReply(msg, '⚠️ Balas *Ya* untuk mencatat atau *Batal* untuk membatalkan.');
@@ -1301,6 +1318,7 @@ async function handleMessage(msg: any, client: any): Promise<any> {
               msg,
               `${emoji} *Berhasil Dicatat!*\n\n${tipeLabel}\n💵 Jumlah : ${formatRupiah(sel.amount)}\n📦 Produk : ${selectedProduct.name}\n📝 Ket    : ${sel.description}${extraInfo}`,
             );
+            await warnDemoLimitAfterTx(msg, { id: sender, status: sel.effectiveStatus });
             return;
           }
           const nameMatch = sel.products.find((p: any) => body.toLowerCase().includes(p.name.toLowerCase()));
@@ -1328,6 +1346,7 @@ async function handleMessage(msg: any, client: any): Promise<any> {
               msg,
               `${emoji} *Berhasil Dicatat!*\n\n${tipeLabel}\n💵 Jumlah : ${formatRupiah(sel.amount)}\n📦 Produk : ${nameMatch.name}\n📝 Ket    : ${sel.description}`,
             );
+            await warnDemoLimitAfterTx(msg, { id: sender, status: sel.effectiveStatus });
             return;
           }
           await safeReply(
@@ -1391,6 +1410,7 @@ async function handleMessage(msg: any, client: any): Promise<any> {
                 msg,
                 `${emoji} *Berhasil Dicatat!*\n\n${tipeLabel}\n\ud83d\udcb5 Jumlah : ${formatRupiah(cDialog.amount)}\n\ud83d\udce6 Produk : ${matchedProductCD.name}\n\ud83d\udcdd Ket    : ${finalDesc}${extraInfo}`,
               );
+              await warnDemoLimitAfterTx(msg, { id: sender, status: effectiveStatus });
               return;
             }
 

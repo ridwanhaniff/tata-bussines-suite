@@ -584,23 +584,26 @@ async function checkOverduePiutang(client: any): Promise<void> {
       return;
     }
   }
-  logInfo('[CRON] Cek Piutang Overdue...');
+  logInfo('[CRON] Cek Piutang Jatuh Tempo...');
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(today);
+    todayEnd.setDate(todayEnd.getDate() + 1);
 
     const { data: debts, error } = (await supabase
       .from('receivables')
       .select('id, user_id, nama_pelanggan, nominal_piutang, jatuh_tempo')
       .eq('status_lunas', false)
       .not('jatuh_tempo', 'is', null)
-      .lt('jatuh_tempo', today.toISOString())) as any;
+      .gte('jatuh_tempo', today.toISOString())
+      .lt('jatuh_tempo', todayEnd.toISOString())) as any;
     if (error) {
-      logError(`[CRON] checkOverduePiutang query: ${error.message}`);
+      logError(`[CRON] checkPiutangDue query: ${error.message}`);
       return;
     }
     if (!debts || debts.length === 0) {
-      logInfo('[CRON] Tidak ada piutang overdue');
+      logInfo('[CRON] Tidak ada piutang jatuh tempo hari ini');
       return;
     }
 
@@ -628,7 +631,7 @@ async function checkOverduePiutang(client: any): Promise<void> {
         const user = userMap[userId];
         if (!user) continue;
         const total = userDebts.reduce((sum: number, d: any) => sum + Number(d.nominal_piutang), 0);
-        let msg = `⚠️ *Pengingat Piutang - ${user.store_name}*\n\nAda *${userDebts.length}* piutang yang sudah lewat jatuh tempo:\n\n`;
+        let msg = `⚠️ *Pengingat Piutang - ${user.store_name}*\n\nAda *${userDebts.length}* piutang jatuh tempo hari ini:\n\n`;
         userDebts.slice(0, 10).forEach((d: any) => {
           const due = new Date(d.jatuh_tempo).toLocaleDateString('id-ID');
           msg += `• *${d.nama_pelanggan}* — ${formatRupiah(Number(d.nominal_piutang))}\n  Jatuh tempo: ${due}\n\n`;
@@ -643,61 +646,9 @@ async function checkOverduePiutang(client: any): Promise<void> {
       }
       await sleep(500);
     }
-    logInfo(`[CRON] Piutang overdue notified: ${sent}/${Object.keys(byUser).length}`);
+    logInfo(`[CRON] Piutang due notified: ${sent}/${Object.keys(byUser).length}`);
   } catch (err: any) {
-    logError(`[CRON] checkOverduePiutang error: ${err.message}`);
-  }
-}
-
-const demoLimitNotified = new Set<string>();
-
-async function checkDemoLimitWarning(client: any): Promise<void> {
-  if (!client) {
-    client = state.waClient;
-    if (!client) {
-      logWarn('[SCHEDULER] WA client null, skip checkDemoLimitWarning');
-      return;
-    }
-  }
-  logInfo('[CRON] Cek Demo Limit...');
-  try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayKey = today.toISOString().slice(0, 10);
-
-    const { data: users } = (await supabase
-      .from('users')
-      .select('id, store_name')
-      .eq('status', 'demo')
-      .eq('onboarding_status', 'active_user')) as any;
-    if (!users || users.length === 0) return;
-
-    for (const u of users) {
-      const notifyKey = `${u.id}-${todayKey}`;
-      if (demoLimitNotified.has(notifyKey)) continue;
-
-      const { count } = (await supabase
-        .from('transactions')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', u.id)
-        .gte('created_at', today.toISOString())) as any;
-
-      if (count != null && count >= 3) {
-        try {
-          const remaining = 5 - count;
-          await client.sendMessage(
-            u.id,
-            `⚠️ *Peringatan Batas Demo*\n\nHalo ${u.store_name}, hari ini Anda sudah mencatat *${count}* transaksi.\n\nKuota demo: 5 transaksi/hari. 💡\nSisa: ${remaining} transaksi.\n\nKetik *Paket* untuk upgrade ke PRO agar transaksi tanpa batas! 🚀`,
-          );
-          demoLimitNotified.add(notifyKey);
-        } catch (e: any) {
-          logError(`[CRON] Demo limit notify error ${u.id}: ${e.message}`);
-        }
-      }
-      await sleep(300);
-    }
-  } catch (err: any) {
-    logError(`[CRON] checkDemoLimitWarning error: ${err.message}`);
+    logError(`[CRON] checkPiutangDue error: ${err.message}`);
   }
 }
 
@@ -711,23 +662,26 @@ async function checkOverdueHutang(client: any): Promise<void> {
       return;
     }
   }
-  logInfo('[CRON] Cek Hutang Overdue...');
+  logInfo('[CRON] Cek Hutang Jatuh Tempo...');
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(today);
+    todayEnd.setDate(todayEnd.getDate() + 1);
 
     const { data: hutangs, error } = (await supabase
       .from('payables')
       .select('id, user_id, nama_supplier, nominal_hutang, jumlah_dibayar, jatuh_tempo')
       .eq('status_lunas', false)
       .not('jatuh_tempo', 'is', null)
-      .lt('jatuh_tempo', today.toISOString())) as any;
+      .gte('jatuh_tempo', today.toISOString())
+      .lt('jatuh_tempo', todayEnd.toISOString())) as any;
     if (error) {
-      logError(`[CRON] checkOverdueHutang query: ${error.message}`);
+      logError(`[CRON] checkHutangDue query: ${error.message}`);
       return;
     }
     if (!hutangs || hutangs.length === 0) {
-      logInfo('[CRON] Tidak ada hutang overdue');
+      logInfo('[CRON] Tidak ada hutang jatuh tempo hari ini');
       return;
     }
 
@@ -758,7 +712,7 @@ async function checkOverdueHutang(client: any): Promise<void> {
           (sum: number, h: any) => sum + Number(h.nominal_hutang) - Number(h.jumlah_dibayar || 0),
           0,
         );
-        let msg = `⏰ *Pengingat Hutang — ${user.store_name}*\n\nAda *${userHutangs.length}* hutang yang sudah lewat jatuh tempo:\n\n`;
+        let msg = `⏰ *Pengingat Hutang — ${user.store_name}*\n\nAda *${userHutangs.length}* hutang jatuh tempo hari ini:\n\n`;
         userHutangs.slice(0, 10).forEach((h: any) => {
           const due = new Date(h.jatuh_tempo).toLocaleDateString('id-ID');
           const sisa = Number(h.nominal_hutang) - Number(h.jumlah_dibayar || 0);
@@ -774,9 +728,9 @@ async function checkOverdueHutang(client: any): Promise<void> {
       }
       await sleep(500);
     }
-    logInfo(`[CRON] Hutang overdue notified: ${sent}/${Object.keys(byUser).length}`);
+    logInfo(`[CRON] Hutang due notified: ${sent}/${Object.keys(byUser).length}`);
   } catch (err: any) {
-    logError(`[CRON] checkOverdueHutang error: ${err.message}`);
+    logError(`[CRON] checkHutangDue error: ${err.message}`);
   }
 }
 
@@ -850,11 +804,11 @@ async function cleanupOldData(): Promise<void> {
   }
 }
 
-async function sendDailyRecap(client: any, userId: string, storeName: string, storeSlug?: string): Promise<boolean> {
+async function sendDailyCombined(client: any, userId: string, storeName: string, storeSlug?: string): Promise<boolean> {
   if (!client) {
     client = state.waClient;
     if (!client) {
-      logWarn('[SCHEDULER] WA client null, skip sendDailyRecap');
+      logWarn('[SCHEDULER] WA client null, skip sendDailyCombined');
       return false;
     }
   }
@@ -864,35 +818,33 @@ async function sendDailyRecap(client: any, userId: string, storeName: string, st
     const todayISO = today.toISOString();
     const { data: trans } = (await supabase
       .from('transactions')
-      .select('type, amount, description, reference_type, created_at')
+      .select('type, amount, description')
       .eq('user_id', userId)
       .gte('created_at', todayISO)) as any;
     if (!trans || trans.length === 0) return false;
-    let omzet = 0,
-      hpp = 0,
-      pengeluaran = 0;
+    let masuk = 0, keluar = 0, hpp = 0;
     const channelTotals: Record<string, number> = {};
     trans.forEach((t: any) => {
       const v = Number(t.amount) || 0;
       if (t.type === 'masuk') {
-        omzet += v;
+        masuk += v;
         const chMatch = t.description?.match(/\((Tokopedia|TikTok Shop|Lazada|Shopee)\)/i);
         const ch = chMatch ? chMatch[1] : 'Offline';
         channelTotals[ch] = (channelTotals[ch] || 0) + v;
       } else {
-        pengeluaran += v;
+        keluar += v;
       }
     });
-    const { data: cashierSales } = (await supabase
+    const { data: stockOutTx } = (await supabase
       .from('transactions')
       .select('price_buy, quantity')
       .eq('user_id', userId)
-      .eq('reference_type', 'cashier')
+      .eq('reference_type', 'stock_out')
       .gte('created_at', todayISO)) as any;
-    (cashierSales || []).forEach((t: any) => {
+    (stockOutTx || []).forEach((t: any) => {
       hpp += (Number(t.quantity) || 0) * (Number(t.price_buy) || 0);
     });
-    const laba = omzet - hpp - pengeluaran;
+    const laba = masuk - hpp - keluar;
     const { data: movements } = (await supabase
       .from('stock_movements')
       .select('quantity, products(name)')
@@ -909,6 +861,7 @@ async function sendDailyRecap(client: any, userId: string, storeName: string, st
     const topProducts = Object.entries(productSales)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
+    const saldo = masuk - keluar;
     const channelLines =
       Object.entries(channelTotals)
         .sort((a, b) => b[1] - a[1])
@@ -917,14 +870,14 @@ async function sendDailyRecap(client: any, userId: string, storeName: string, st
     const productLines =
       topProducts.length > 0
         ? topProducts.map(([name, qty]) => `  ${name} — ${qty} pcs`).join('\n')
-        : '  Belum ada penjualan produk hari ini';
+        : '  Belum ada';
     const appUrl = (process.env.APP_URL || 'https://nickridwan-tata-business-suite.hf.space').replace(/\/+$/, '');
     const slug = storeSlug || userId.replace('@', '%40');
-    const msg = `Malam Bosku! 🌙 Toko udah tutup, waktunya kita rekap pergerakan uang hari ini ya:\n\n💰 *KONDISI KEUANGAN:*\n• Omzet Masuk: ${formatRupiah(omzet)}\n• Modal Barang (HPP): ${formatRupiah(hpp)}\n• Biaya Keluar (Beli): ${formatRupiah(pengeluaran)}\n📈 *Laba Bersih Hari Ini: ${formatRupiah(laba)}*\n\n🛒 *SUMBER PENJUALAN TERBESAR:*\n${channelLines}\n\n📦 *BARANG PALING LAKU:*\n${productLines}\n\nIstirahat yang cukup bos, besok kita gas cari cuan lagi! 💪\nCek detailnya di dashboard ya: ${appUrl}/stock/${slug}`;
+    const msg = `📊 *Laporan Harian — ${storeName}*\n${'─'.repeat(26)}\n🟢 Pemasukan : ${formatRupiah(masuk)}\n🔴 Pengeluaran : ${formatRupiah(keluar)}${'─'.repeat(26)}\n${saldo >= 0 ? `💰 *Saldo: ${formatRupiah(saldo)}*` : `🔴 *Defisit: -${formatRupiah(Math.abs(saldo))}*`}\n\n📈 *Laba Bersih: ${formatRupiah(laba)}*\n\n🛒 *SUMBER PENJUALAN:*\n${channelLines}\n\n📦 *PRODUK TERLARIS:*\n${productLines}\n\n📋 ${trans.length} transaksi hari ini\n\nDetail: ${appUrl}/stock/${slug}`;
     await client.sendMessage(userId, msg);
     return true;
   } catch (err: any) {
-    logError(`[RECAP] ${userId}: ${err.message}`);
+    logError(`[DAILY] ${userId}: ${err.message}`);
     return false;
   }
 }
@@ -936,45 +889,15 @@ function initSchedulers(addLogFn?: (level: string, msg: string) => void): void {
   const getClient = () => state.waClient;
 
   cron.schedule(
-    '0 22 * * *',
+    '0 21 * * *',
     () => {
       executeWithLock(
         'daily-report',
         async () => {
-          logInfo('[CRON] Laporan Harian...');
+          logInfo('[CRON] Laporan Harian (21:00)...');
           try {
             const today = new Date();
             today.setHours(0, 0, 0, 0);
-            const { data: users } = (await supabase
-              .from('users')
-              .select('id, store_name')
-              .eq('onboarding_status', 'active_user')
-              .in('status', ['demo', 'pro', 'unlimited'])) as any;
-            if (!users) return;
-            let ok = 0;
-            for (const u of users) {
-              if (await sendReport(getClient(), u.id, u.store_name, 'Harian', today.toISOString())) ok++;
-              await sleep(300);
-            }
-            logInfo(`[CRON] Harian selesai: ${ok}/${users.length}`);
-          } catch (e: any) {
-            logError(`[CRON] Harian: ${e.message}`);
-          }
-        },
-        60,
-      );
-    },
-    tz,
-  );
-
-  cron.schedule(
-    '59 23 * * *',
-    () => {
-      executeWithLock(
-        'daily-recap',
-        async () => {
-          logInfo('[CRON] Daily Recap (23:59)...');
-          try {
             const { data: users } = (await supabase
               .from('users')
               .select('id, store_name, store_slug')
@@ -983,15 +906,15 @@ function initSchedulers(addLogFn?: (level: string, msg: string) => void): void {
             if (!users) return;
             let ok = 0;
             for (const u of users) {
-              if (await sendDailyRecap(getClient(), u.id, u.store_name, u.store_slug)) ok++;
+              if (await sendDailyCombined(getClient(), u.id, u.store_name, u.store_slug)) ok++;
               await sleep(300);
             }
-            logInfo(`[CRON] Daily Recap selesai: ${ok}/${users.length}`);
+            logInfo(`[CRON] Harian selesai: ${ok}/${users.length}`);
           } catch (e: any) {
-            logError(`[CRON] Daily Recap: ${e.message}`);
+            logError(`[CRON] Harian: ${e.message}`);
           }
         },
-        30,
+        60,
       );
     },
     tz,
@@ -1084,7 +1007,7 @@ function initSchedulers(addLogFn?: (level: string, msg: string) => void): void {
       2,
     );
   });
-  cron.schedule('*/2 * * * *', () => {
+  cron.schedule('*/5 * * * *', () => {
     executeWithLock(
       'broadcast',
       async () => {
@@ -1094,7 +1017,7 @@ function initSchedulers(addLogFn?: (level: string, msg: string) => void): void {
     );
   });
   cron.schedule(
-    '0 9 * * *',
+    '0 6 * * *',
     () => {
       executeWithLock(
         'morning-greeting',
@@ -1107,7 +1030,7 @@ function initSchedulers(addLogFn?: (level: string, msg: string) => void): void {
     tz,
   );
   cron.schedule(
-    '0 18 * * *',
+    '0 16 * * *',
     () => {
       executeWithLock(
         'evening-reminder',
@@ -1120,7 +1043,7 @@ function initSchedulers(addLogFn?: (level: string, msg: string) => void): void {
     tz,
   );
   cron.schedule(
-    '0 */6 * * *',
+    '0 7 * * *',
     () => {
       executeWithLock(
         'stock-alerts',
@@ -1133,10 +1056,10 @@ function initSchedulers(addLogFn?: (level: string, msg: string) => void): void {
     tz,
   );
   cron.schedule(
-    '0 8,20 * * *',
+    '0 8 * * *',
     () => {
       executeWithLock(
-        'overdue-piutang',
+        'piutang-due',
         async () => {
           await checkOverduePiutang(getClient());
         },
@@ -1146,20 +1069,7 @@ function initSchedulers(addLogFn?: (level: string, msg: string) => void): void {
     tz,
   );
   cron.schedule(
-    '0 14 * * *',
-    () => {
-      executeWithLock(
-        'demo-limit',
-        async () => {
-          await checkDemoLimitWarning(getClient());
-        },
-        30,
-      );
-    },
-    tz,
-  );
-  cron.schedule(
-    '0 10 * * *',
+    '0 22 * * *',
     () => {
       executeWithLock(
         'expiry-warning',
@@ -1172,10 +1082,10 @@ function initSchedulers(addLogFn?: (level: string, msg: string) => void): void {
     tz,
   );
   cron.schedule(
-    '0 9,21 * * *',
+    '0 8 * * *',
     () => {
       executeWithLock(
-        'overdue-hutang',
+        'hutang-due',
         async () => {
           await checkOverdueHutang(getClient());
         },
@@ -1259,15 +1169,12 @@ function initSchedulers(addLogFn?: (level: string, msg: string) => void): void {
   setTimeout(selfPing, 30_000);
 
   logInfo('[SISTEM] ✅ Scheduler aktif dengan mutex lock:');
-  logInfo('  - Harian (22:00) | Mingguan (Minggu 21:00) | Bulanan (tgl 1, 21:00)');
-  logInfo('  - Expiry check (00:05) | Upgrade notif (tiap 1 min)');
-  logInfo('  - Broadcast (tiap 2 min) | Sapaan pagi (09:00) | Pengingat sore (18:00)');
-  logInfo('  - Stock alerts (tiap 6 jam) | Piutang overdue (08:00, 20:00)');
-  logInfo('  - Demo limit warning (14:00) | Expiry warning (10:00)');
-  logInfo('  - Hutang overdue (09:00, 21:00)');
-  logInfo('  - Self-ping (tiap 20 menit) — HF always-on ✅');
+  logInfo('  - Laporan Harian (21:00) | Mingguan (Sabtu 21:00) | Bulanan (tgl 1, 21:00)');
+  logInfo('  - Sapaan pagi (06:00) | Pengingat sore (16:00)');
+  logInfo('  - Expiry check (00:05) | Expiry warning (22:00) | Upgrade notif (tiap 1 min)');
+  logInfo('  - Broadcast (tiap 5 min) | Hutang due (08:00) | Piutang due (08:00)');
+  logInfo('  - Stock alerts (07:00) | Self-ping (tiap 20 min) | DB Backup (02:00)');
   logInfo('  - Smart Learning cleanup (stale 90-day behaviors)');
-  logInfo('  - DB Backup (02:00) — upload ke HF Storage Bucket');
 }
 
 export { initSchedulers, sendReport, sendUpgradeNotification, broadcastMessage, autoCleanCache };

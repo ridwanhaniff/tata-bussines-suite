@@ -594,31 +594,53 @@ export function ProductsPage() {
               </div>
               <div className="form-group">
                 <label className="form-label">Channel Tersedia</label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', padding: '0.4rem 0' }}>
-                  {activeChannels.map((ch) => {
-                    const selected = form.channels.includes(ch);
-                    return (
-                      <div
-                        key={ch}
-                        onClick={() => setForm(prev => ({
-                          ...prev,
-                          channels: selected ? prev.channels.filter(c => c !== ch) : [...prev.channels, ch],
-                        }))}
-                        style={{
-                          padding: '0.3rem 0.6rem', borderRadius: 6, cursor: 'pointer',
-                          fontSize: '0.8rem', fontWeight: 500,
-                          background: selected ? 'var(--primary)' : 'var(--border)',
-                          color: selected ? '#fff' : 'var(--text)',
-                          border: selected ? '1px solid var(--primary)' : '1px solid transparent',
-                          transition: 'all 0.15s',
-                        }}
-                      >
-                        {ch.charAt(0).toUpperCase() + ch.slice(1)}
-                      </div>
-                    );
-                  })}
-                </div>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Klik untuk memilih channel penjualan produk ini</span>
+                {(() => {
+                  const marketplace = activeChannels.filter((ch: string) =>
+                    ['tokopedia', 'shopee', 'lazada', 'tiktok shop', 'tiktok'].includes(ch.toLowerCase()),
+                  );
+                  const lainnya = activeChannels.filter((ch: string) =>
+                    !['tokopedia', 'shopee', 'lazada', 'tiktok shop', 'tiktok'].includes(ch.toLowerCase()),
+                  );
+                  const renderChips = (chs: string[]) => (
+                    <div className="channel-chips">
+                      {chs.map((ch) => {
+                        const selected = form.channels.includes(ch);
+                        return (
+                          <div
+                            key={ch}
+                            className={`channel-chip${selected ? ' active' : ''}`}
+                            onClick={() =>
+                              setForm(prev => ({
+                                ...prev,
+                                channels: selected
+                                  ? prev.channels.filter((c: string) => c !== ch)
+                                  : [...prev.channels, ch],
+                              }))
+                            }
+                          >
+                            {ch.charAt(0).toUpperCase() + ch.slice(1)}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                  return (
+                    <div style={{ padding: '0.5rem 0' }}>
+                      {marketplace.length > 0 && (
+                        <>
+                          <div className="channel-group-label">Online Marketplace</div>
+                          {renderChips(marketplace)}
+                        </>
+                      )}
+                      {lainnya.length > 0 && (
+                        <>
+                          <div className="channel-group-label">Offline &amp; Lainnya</div>
+                          {renderChips(lainnya)}
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
             <div className="form-group">

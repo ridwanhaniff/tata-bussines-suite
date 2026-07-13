@@ -313,6 +313,59 @@ select.input { appearance: auto; }
 .dark .badge-gray { background: #334155; color: #cbd5e1; }
 .dark .badge-purple { background: #4c1d95; color: #d8b4fe; }
 
+.channel-group-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.35rem;
+  margin-top: 0.5rem;
+}
+.channel-group-label:first-of-type {
+  margin-top: 0;
+}
+.channel-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.channel-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1.5px solid var(--border);
+  transition: all 0.15s ease;
+  user-select: none;
+  white-space: nowrap;
+  min-height: 32px;
+}
+.channel-chip:hover {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+.channel-chip.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.channel-chip.active:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+.channel-chip .chip-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
 /* ── Tables ── */
 .tbl-wrap { overflow-x: auto; overflow-y: auto; max-height: 60vh; border-radius: var(--radius); border: 1px solid var(--border); position: relative; }
 table { width: 100%; border-collapse: separate; border-spacing: 0; }

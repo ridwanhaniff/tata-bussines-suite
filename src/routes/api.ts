@@ -804,7 +804,7 @@ router.get('/api/stock/products', stockAuth, async (req: StockRequest, res: Resp
     let query: any = supabase
       .from('products')
       .select(
-        'id, sku, name, category, unit, stock_current, stock_min, price_buy, price_sell, default_channel, supplier, location, notes, is_active',
+        'id, sku, name, category, unit, stock_current, stock_min, price_buy, price_sell, default_channel, image_url, channels, supplier, location, notes, is_active',
         { count: 'exact' },
       )
       .eq('user_id', userId)
@@ -837,7 +837,7 @@ router.get('/api/stock/products', stockAuth, async (req: StockRequest, res: Resp
         const hasDefaultChannel = (await pgPool.query(
           `SELECT column_name FROM information_schema.columns WHERE table_name='products' AND column_name='default_channel'`,
         )).rows.length > 0;
-        const cols = `id, sku, name, category, unit, stock_current, stock_min, price_buy, price_sell${hasDefaultChannel ? ', default_channel' : ''}, supplier, location, notes, is_active`;
+        const cols = `id, sku, name, category, unit, stock_current, stock_min, price_buy, price_sell${hasDefaultChannel ? ', default_channel' : ''}, image_url, channels, supplier, location, notes, is_active`;
         let sql = `SELECT ${cols} FROM products WHERE user_id = $1 AND is_active = true`;
         const params: any[] = [userId];
         let paramIdx = 2;
