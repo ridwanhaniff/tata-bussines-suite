@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useStockStore } from '../../store/stockStore';
 import { stockApi, bomApi } from '../../services/api';
@@ -57,6 +57,10 @@ export function ProductsPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [productImage, setProductImage] = useState<string | null>(null);
   const [imageChanged, setImageChanged] = useState(false);
+  const [tagChannelInput, setTagChannelInput] = useState('');
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const tagInputRef = useRef<HTMLInputElement>(null);
+  const tagContainerRef = useRef<HTMLDivElement>(null);
 
   // wizard state (create only)
   const [wizardStep, setWizardStep] = useState(1);
@@ -123,6 +127,43 @@ export function ProductsPage() {
       }
     }
   }, [form.name]);
+
+  const filteredTagChannels = activeChannels.filter(
+    (ch: string) => !form.channels.includes(ch) &&
+      ch.toLowerCase().includes(tagChannelInput.toLowerCase()),
+  );
+
+  function addTagChannel(ch: string) {
+    if (form.channels.includes(ch)) return;
+    setForm(prev => ({ ...prev, channels: [...prev.channels, ch] }));
+    setTagChannelInput('');
+    tagInputRef.current?.focus();
+  }
+
+  function removeTagChannel(ch: string) {
+    setForm(prev => ({ ...prev, channels: prev.channels.filter((c: string) => c !== ch) }));
+  }
+
+  function handleTagInputKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Backspace' && tagChannelInput === '' && form.channels.length > 0) {
+      removeTagChannel(form.channels[form.channels.length - 1]);
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (filteredTagChannels.length > 0) addTagChannel(filteredTagChannels[0]);
+    }
+  }
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (tagContainerRef.current && !tagContainerRef.current.contains(e.target as Node)) {
+        setShowTagDropdown(false);
+        setTagChannelInput('');
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const IMAGE_MAX_WIDTH = 1200;
   const IMAGE_QUALITY = 0.85;
@@ -546,6 +587,54 @@ export function ProductsPage() {
         {/* ── Step 1: Informasi Produk ── */}
         {(!editProduct && wizardStep === 1) || editProduct ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* Gambar Produk */}
+            <div className="form-group">
+              <label className="form-label">Gambar Produk</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                {productImage ? (
+                  <div style={{ position: 'relative' }}>
+                    <img src={productImage} alt="Preview"
+                      style={{ width: 120, height: 120, borderRadius: 10, objectFit: 'cover', border: '1px solid var(--border)' }}
+                    />
+                    <button
+                      onClick={handleRemoveImage}
+                      style={{
+                        position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%',
+                        border: 'none', background: 'var(--danger)', color: '#fff', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem',
+                      }}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => document.getElementById('product-image-input')?.click()}
+                    style={{
+                      width: 120, height: 120, borderRadius: 10, border: '2px dashed var(--border)',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.75rem', gap: '0.3rem',
+                      transition: 'border-color 0.2s',
+                    }}
+                    onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = 'var(--primary)'; }}
+                    onMouseLeave={(e) => { (e.target as HTMLElement).style.borderColor = 'var(--border)'; }}
+                  >
+                    <Image size={20} />
+                    Upload
+                  </div>
+                )}
+              </div>
+              <input
+                id="product-image-input"
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleImageSelect}
+              />
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.25rem' }}>
+                JPEG/PNG, maks 10MB. 1 gambar per produk.
+              </span>
+            </div>
             <div className="form-row">
               <div className="form-group">
                 <label className="form-label">SKU *</label>
@@ -594,107 +683,42 @@ export function ProductsPage() {
               </div>
               <div className="form-group">
                 <label className="form-label">Channel Tersedia</label>
-                {(() => {
-                  const marketplace = activeChannels.filter((ch: string) =>
-                    ['tokopedia', 'shopee', 'lazada', 'tiktok shop', 'tiktok'].includes(ch.toLowerCase()),
-                  );
-                  const lainnya = activeChannels.filter((ch: string) =>
-                    !['tokopedia', 'shopee', 'lazada', 'tiktok shop', 'tiktok'].includes(ch.toLowerCase()),
-                  );
-                  const renderChips = (chs: string[]) => (
-                    <div className="channel-chips">
-                      {chs.map((ch) => {
-                        const selected = form.channels.includes(ch);
-                        return (
-                          <div
-                            key={ch}
-                            className={`channel-chip${selected ? ' active' : ''}`}
-                            onClick={() =>
-                              setForm(prev => ({
-                                ...prev,
-                                channels: selected
-                                  ? prev.channels.filter((c: string) => c !== ch)
-                                  : [...prev.channels, ch],
-                              }))
-                            }
-                          >
-                            {ch.charAt(0).toUpperCase() + ch.slice(1)}
-                          </div>
-                        );
-                      })}
+                <div className="tag-input-container" ref={tagContainerRef}>
+                  <div className="tag-input-wrapper" onClick={() => tagInputRef.current?.focus()}>
+                    {form.channels.map(ch => (
+                      <span key={ch} className="tag-chip">
+                        {ch.charAt(0).toUpperCase() + ch.slice(1)}
+                        <button className="tag-chip-remove" onClick={(e) => { e.stopPropagation(); removeTagChannel(ch); }}>
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ))}
+                    <input
+                      ref={tagInputRef}
+                      className="tag-input-field"
+                      value={tagChannelInput}
+                      onChange={(e) => { setTagChannelInput(e.target.value); setShowTagDropdown(true); }}
+                      onFocus={() => setShowTagDropdown(true)}
+                      onKeyDown={handleTagInputKeyDown}
+                      placeholder={form.channels.length === 0 ? 'Ketik cari channel...' : ''}
+                    />
+                  </div>
+                  {showTagDropdown && filteredTagChannels.length > 0 && (
+                    <div className="tag-dropdown">
+                      {filteredTagChannels.map(ch => (
+                        <div key={ch} className="tag-dropdown-item" onMouseDown={() => addTagChannel(ch)}>
+                          <Globe size={14} />
+                          {ch.charAt(0).toUpperCase() + ch.slice(1)}
+                        </div>
+                      ))}
                     </div>
-                  );
-                  return (
-                    <div style={{ padding: '0.5rem 0' }}>
-                      {marketplace.length > 0 && (
-                        <>
-                          <div className="channel-group-label">Online Marketplace</div>
-                          {renderChips(marketplace)}
-                        </>
-                      )}
-                      {lainnya.length > 0 && (
-                        <>
-                          <div className="channel-group-label">Offline &amp; Lainnya</div>
-                          {renderChips(lainnya)}
-                        </>
-                      )}
-                    </div>
-                  );
-                })()}
+                  )}
+                </div>
               </div>
             </div>
             <div className="form-group">
               <label className="form-label">Stok Minimal</label>
               <input className="input" type="number" value={form.stock_min} onChange={(e) => setForm({ ...form, stock_min: e.target.value })} placeholder="Untuk peringatan stok menipis" />
-            </div>
-
-            {/* Gambar Produk */}
-            <div className="form-group">
-              <label className="form-label">Gambar Produk</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                {productImage ? (
-                  <div style={{ position: 'relative' }}>
-                    <img src={productImage} alt="Preview"
-                      style={{ width: 120, height: 120, borderRadius: 10, objectFit: 'cover', border: '1px solid var(--border)' }}
-                    />
-                    <button
-                      onClick={handleRemoveImage}
-                      style={{
-                        position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%',
-                        border: 'none', background: 'var(--danger)', color: '#fff', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem',
-                      }}
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                ) : (
-                  <div
-                    onClick={() => document.getElementById('product-image-input')?.click()}
-                    style={{
-                      width: 120, height: 120, borderRadius: 10, border: '2px dashed var(--border)',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                      cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.75rem', gap: '0.3rem',
-                      transition: 'border-color 0.2s',
-                    }}
-                    onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = 'var(--primary)'; }}
-                    onMouseLeave={(e) => { (e.target as HTMLElement).style.borderColor = 'var(--border)'; }}
-                  >
-                    <Image size={20} />
-                    Upload
-                  </div>
-                )}
-              </div>
-              <input
-                id="product-image-input"
-                type="file"
-                accept="image/*"
-                style={{ display: 'none' }}
-                onChange={handleImageSelect}
-              />
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.25rem' }}>
-                JPEG/PNG, maks 10MB. 1 gambar per produk.
-              </span>
             </div>
 
             {/* BOM management inline for edit mode */}
