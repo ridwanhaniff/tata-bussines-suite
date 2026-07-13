@@ -105,7 +105,10 @@ export const bomApi = {
   listMaterials(token: string) {
     return stockApi.get<{ materials: import('../types').BomMaterial[] }>('/api/stock/materials', token);
   },
-  addMaterial(token: string, data: { name: string; unit?: string; stock_current?: number; stock_min?: number; cost_per_unit?: number }) {
+  addMaterial(
+    token: string,
+    data: { name: string; unit?: string; stock_current?: number; stock_min?: number; cost_per_unit?: number },
+  ) {
     return stockApi.post<{ material: import('../types').BomMaterial }>('/api/stock/materials', token, data);
   },
   updateMaterial(token: string, id: string, data: Record<string, unknown>) {
@@ -125,6 +128,9 @@ export const bomApi = {
     return stockApi.del<{ success: boolean }>(`/api/stock/materials/recipes/${id}`, token);
   },
   getDeductionLogs(token: string, limit = 50) {
-    return stockApi.get<{ logs: import('../types').BomDeductionLog[] }>(`/api/stock/materials/logs?limit=${limit}`, token);
+    return stockApi.get<{ logs: import('../types').BomDeductionLog[] }>(
+      `/api/stock/materials/logs?limit=${limit}`,
+      token,
+    );
   },
 };

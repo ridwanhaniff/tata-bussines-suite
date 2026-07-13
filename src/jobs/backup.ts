@@ -32,7 +32,7 @@ async function uploadToBucket(filePath: string, remotePath: string): Promise<boo
     const response = await fetch(url, {
       method: 'PUT',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/octet-stream',
       },
       body: fileBuffer,
@@ -86,7 +86,9 @@ async function runBackup(): Promise<{ success: boolean; error?: string; size?: n
     });
 
     let stderr = '';
-    proc.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
 
     proc.on('close', (code) => {
       if (code === 0 && fs.existsSync(localPath)) {
@@ -106,13 +108,21 @@ async function runBackup(): Promise<{ success: boolean; error?: string; size?: n
   });
 
   if (!dumpResult.success) {
-    try { fs.unlinkSync(localPath); } catch { /* ignore */ }
+    try {
+      fs.unlinkSync(localPath);
+    } catch {
+      /* ignore */
+    }
     return dumpResult;
   }
 
   const uploaded = await uploadToBucket(localPath, remotePath);
 
-  try { fs.unlinkSync(localPath); } catch { /* ignore */ }
+  try {
+    fs.unlinkSync(localPath);
+  } catch {
+    /* ignore */
+  }
 
   if (!uploaded) {
     return { success: false, error: 'Upload ke bucket gagal (file dump lokal sudah dihapus)' };

@@ -26,11 +26,11 @@ Buka dashboard → Settings → aktifkan channel: Offline, Tokopedia, Shopee.
 
 **Produk:**
 
-| Produk | Harga Beli | Harga Jual | Stok Awal | Satuan |
-|--------|-----------|-----------|-----------|--------|
-| Kemeja Pria | Rp 75.000 | Rp 150.000 | 50 | pcs |
-| Dress Wanita | Rp 120.000 | Rp 250.000 | 30 | pcs |
-| Blouse | Rp 60.000 | Rp 130.000 | 40 | pcs |
+| Produk | Harga Beli | Harga Jual | Stok Awal | Satuan | Channels | Default Channel |
+|--------|-----------|-----------|-----------|--------|---------|-----------------|
+| Kemeja Pria | Rp 75.000 | Rp 150.000 | 50 | pcs | Tokopedia, Shopee, Offline | Tokopedia |
+| Dress Wanita | Rp 120.000 | Rp 250.000 | 30 | pcs | Tokopedia, Offline | Offline |
+| Blouse | Rp 60.000 | Rp 130.000 | 40 | pcs | Shopee, Tokopedia, Offline | Shopee |
 
 **Bahan Baku (via Dashboard → Bahan Baku):**
 
@@ -49,10 +49,10 @@ Buka dashboard → Settings → aktifkan channel: Offline, Tokopedia, Shopee.
 **Jurnal Awal — Modal & Stok:**
 ```
 Pembelian stok awal 50 Kemeja @Rp75.000 = Rp 3.750.000
-Pembelian stok awal 30 Dress @Rp120.000   = Rp 3.600.000
-Pembelian stok awal 40 Blouse @Rp60.000   = Rp 3.600.000
-Total modal inventori                    = Rp 10.950.000
-Sisa kas                                 = Rp 4.050.000
+Pembelian stok awal 30 Dress @Rp120.000 = Rp 3.600.000
+Pembelian stok awal 40 Blouse @Rp60.000 = Rp 3.600.000
+Total modal inventori                  = Rp 10.950.000
+Sisa kas                               = Rp 4.050.000
 
 Jurnal:
 Debit 1201 (Inventori)     Rp 10.950.000
@@ -62,25 +62,55 @@ Kredit 1101 (Kas)          Rp  4.050.000
 
 ---
 
-## Skenario 2: Transaksi via WA — Jual 2 Kemeja di Tokopedia
+## Skenario 2: Transaksi via WA — Keluar 2 Kemeja (Multi-Channel Dialog)
 
-### WA Chat
+### WA Chat — Tahap 1: Input
 ```
-Sarah: "jual tokopedia kemeja 2"
+Sarah: "Keluar kemeja 2"
 ```
 
-### Proses Sistem — `handleSaleCommand` di `message.ts:72-135`:
+### Proses Sistem — `handleStockInOutCommand` di `message.ts:23-75`:
 
-**Step 1 — Parsing:** regex `jual (tokped) (kemeja) (2)`
-- `channelMap['tokped']` → `'Tokopedia'`
-- Produk: cari `stockManager.searchProductByName` → cocok dengan "Kemeja Pria"
+**Step 1 — Parsing:** regex `keluar (kemeja) (2)`
 - Qty: 2 pcs
 
-**Step 2 — `stockManager.executeSale` → `recordSale` (dalam 1 DB transaction):**
+**Step 2 — Cari Produk:**
+```sql
+SELECT * FROM products WHERE name ILIKE '%kemeja%' AND user_id = 'xxx'
+```
+✅ Cocok: **Kemeja Pria** (channels = ["Tokopedia", "Shopee", "Offline"], default_channel = "Tokopedia")
+
+**Step 3 — Channel Dialog (karena channels.length > 1):**
+```
+📤 Sistem set dialog 'keluar_channel' dengan data:
+   { productId, productName: "Kemeja Pria", qty: 2, channels: ["Tokopedia", "Shopee", "Offline"] }
+
+📲 Bot reply:
+```
+
+### WA Chat — Tahap 2: Dialog Channel
+```
+⚠️ *Kemeja Pria* punya *3 channel* penjualan.
+
+Pilih channel:
+
+1. Tokopedia
+2. Shopee
+3. Offline
+
+Balas *angka 1-3* untuk memilih, atau *Batal* untuk membatalkan.
+```
+
+### WA Chat — Tahap 3: Pilih Channel
+```
+Sarah: "1"
+```
+
+### Step 4 — Eksekusi (`executeStockAdjustment` → `recordStockAdjustment`):
 
 **A. Lock & Cek Stok**
 ```sql
-SELECT stock_current = 50 FROM products WHERE name = 'Kemeja Pria' FOR UPDATE
+SELECT stock_current = 50 FROM products WHERE id = 'prod-1' FOR UPDATE
 ```
 ✅ Stok cukup (50 ≥ 2)
 
@@ -92,10 +122,20 @@ UPDATE products SET stock_current = 50 - 2 = 48 WHERE id = 'prod-1'
 **C. Insert Stock Movement**
 ```sql
 INSERT INTO stock_movements (type='out', quantity=2, stock_before=50, stock_after=48,
-                              reference_type='cashier', channel='Tokopedia')
+                             reference_type='manual', channel='Tokopedia')
 ```
 
-**D. Insert Transaksi**
+**D. Jurnal Double-Entry (otomatis karena `recordTransaction: true`):**
+
+| Account | Debit | Credit | Keterangan |
+|---------|-------|--------|------------|
+| 1101 (Kas) | Rp 294.000 | 0 | Penerimaan penjualan (bersih) |
+| 6105 (Beban Operasional) | Rp 6.000 | 0 | Beban admin Tokopedia 2% |
+| 4101 (Pendapatan Penjualan) | 0 | Rp 300.000 | Penjualan via Tokopedia |
+| 5101 (HPP) | Rp 150.000 | 0 | HPP 2×Rp75.000 |
+| 1201 (Inventori) | 0 | Rp 150.000 | Pengurangan inventori |
+
+**E. Insert Transaksi (di `transactions` table)**
 ```sql
 INSERT INTO transactions (type='masuk', channel='Tokopedia', amount=300.000,
                           quantity=2, price_sell=150.000, price_buy=75.000,
@@ -103,17 +143,7 @@ INSERT INTO transactions (type='masuk', channel='Tokopedia', amount=300.000,
                           hpp=150.000)
 ```
 
-**E. Jurnal Double-Entry:**
-
-| Account | Debit | Credit | Keterangan |
-|---------|-------|--------|------------|
-| 1101 (Kas) | Rp 294.000 | 0 | Penerimaan Tokopedia (bersih) |
-| 6105 (Beban Operasional) | Rp 6.000 | 0 | Admin fee Tokopedia 2% |
-| 4101 (Pendapatan Penjualan) | 0 | Rp 300.000 | Penjualan 2 Kemeja via Tokopedia |
-| 5101 (HPP) | Rp 150.000 | 0 | HPP 2×Rp75.000 |
-| 1201 (Inventori) | 0 | Rp 150.000 | Pengurangan inventori |
-
-**F. Deduksi BOM** (non-blocking, terpisah dari transaksi utama):
+**F. Deduksi BOM** (non-blocking, setelah transaksi utama):
 ```
 Resep Kemeja Pria:
 - Kain Katun: -1.5m × 2 = -3m → sisa 147m
@@ -121,18 +151,13 @@ Resep Kemeja Pria:
 - Kancing: -8pcs × 2 = -16pcs → sisa 484pcs
 ```
 
-**Step 3 — Balasan WA:**
+### Step 5 — Balasan WA (dari `executeStockAdjustment`):
 ```
-✅ Sip bos! Transaksi tercatat ya!
+✅ *Terjual* Kemeja Pria
 
-💰 Uang Masuk: Rp 294.000 (Tokopedia)
-📦 Kemeja Pria: -2 pcs (sisa: 48)
+50 pcs → 48 pcs
 
-Biaya admin Tokopedia 2%: Rp 6.000
-
-_Sip bos! Laris manis! 🔥_
-
-📦 Bahan terpakai:
+📦 *Bahan terpakai*:
 • Kain Katun: -3 meter
 • Benang: -4 pcs
 • Kancing: -16 pcs
@@ -148,6 +173,7 @@ _Sip bos! Laris manis! 🔥_
 Dashboard → `/stock/keuangan` (tab Ringkasan):
 ```
 Laba Rugi:
+
   Revenue: Rp 300.000 (2 kemeja × Rp 150.000)
   HPP:    (Rp 150.000) (2 × Rp 75.000)
   Biaya Admin: (Rp 6.000) (2% Tokopedia)
@@ -172,11 +198,10 @@ POST /api/stock/movement
 → stockManager.recordMovement(userId, { product_id, type:'in', quantity:20 })
    → UPDATE products SET stock_current = 48 + 20 = 68
    → INSERT stock_movements (type='in', quantity=20, stock_before=48, stock_after=68)
-   → INSERT transactions (type='keluar', amount=20×75.000=1.500.000)
 
 Jurnal:
 Debit 1201 (Inventori)     Rp 1.500.000
-Kredit 1101 (Kas)          Rp 1.500.000
+Kredit 3101 (Modal)        Rp 1.500.000
 ```
 
 WA juga bisa: `masuk kemeja 20` → sama hasilnya.
@@ -207,68 +232,68 @@ WA balas:
 
 ---
 
-## Skenario 5: Multi-Channel — Jual 1 Blouse via Shopee
+## Skenario 5: Undo Transaksi — Membatalkan Transaksi yang Salah
 
-### WA
+### Latar Belakang
+
+Sarah sadar 2 Kemeja keluar ke Tokopedia hari ini seharusnya **1 pcs** (bukan 2). Dia undo transaksinya.
+
+### WA Chat
 ```
-Sarah: "jual shopee blouse 1"
+Sarah: "undo"
 ```
 
 **Proses:**
-- Harga Jual Blouse: Rp 130.000
-- Admin Shopee: 3% (dari settings channel)
-- Bahan terpakai: Kain Katun 1m + Benang 2pcs + Kancing 4pcs
+1. Sistem cari transaksi terakhir Sarah → `transactions` DESC limit 1
+2. Dialog konfirmasi:
 
-**Jurnal:**
-
-| Account | Debit | Credit |
-|---------|-------|--------|
-| 1101 (Kas) | Rp 126.100 | 0 |
-| 6105 (Beban Operasional) | Rp 3.900 | 0 |
-| 4101 (Penjualan) | 0 | Rp 130.000 |
-| 5101 (HPP) | Rp 60.000 | 0 |
-| 1201 (Inventori) | 0 | Rp 60.000 |
-
-**Dashboard → `/stock/keuangan` (tab Ringkasan):**
 ```
-Laba Rugi — 30 hari terakhir
+⚠️ Batalkan transaksi terakhir?
 
-Pendapatan:
-  Tokopedia: Rp 300.000
-  Shopee:    Rp 130.000
-  Total Revenue: Rp 430.000
+💵 Rp 300.000 — Penjualan 2 pcs: Kemeja Pria [mov:xxx]
+📅 Baru saja
 
-HPP:
-  Kemeja Pria (2×Rp75.000): Rp 150.000
-  Blouse (1×Rp60.000):      Rp 60.000
-  Total HPP:               Rp 210.000
-
-Laba Kotor: Rp 220.000
-
-Beban Operasional:
-  Gaji Karyawan:        Rp 1.500.000
-  Admin Fee Tokopedia:  Rp 6.000
-  Admin Fee Shopee:     Rp 3.900
-  Total Beban:          Rp 1.509.900
-
-Laba Bersih: Rp 220.000 - Rp 1.509.900 = -Rp 1.289.900 ❌
+Balas *Ya* untuk membatalkan atau *Batal*.
 ```
+
+3. Sarah: `"Ya"`
+
+4. Sistem panggil `reverseTransaction(sender, transactionId)`:
+   - Balik stok: Kemeja Pria 48 → 50
+   - Hapus jurnal (insert jurnal reversal)
+   - Tandai transaksi asli sebagai `voided`
+
+5. WA balas:
+```
+✅ *Transaksi Berhasil Dibatalkan!*
+
+📄 Penjualan 2 pcs: Kemeja Pria [mov:xxx]
+💵 Rp 300.000
+📦 Kemeja Pria
+
+Stok dikembalikan.
+```
+
+### Verifikasi
+- **Kemeja Pria:** stok kembali 50 pcs
+- **Kas:** kembali Rp 4.050.000
+- **Kain Katun:** kembali 150m (BOM juga di-reverse)
 
 ---
 
 ## Skenario 6: Retur — Pelanggan Komplain
 
-### WA — Retur Jual
+### WA — Retur Barang
 ```
-Sarah: "retur jual kemeja 1 rusak"
+Sarah: "retur kemeja 1 rusak"
 ```
 
 **Proses:**
 1. Gemini klasifikasi intent → `retur_jual`
-2. Dialog: "Retur jual 1 Kemeja Pria, alasan: rusak. Lanjut? (iya/tidak)"
+2. Dialog: "Retur penjualan 1 Kemeja Pria, alasan: rusak. Lanjut? (iya/tidak)"
 3. Sarah: "iya"
 4. Sistem panggil `recordSalesReturn`:
-   - Balik stok: Kemeja Pria 68 → 69
+   - Balik stok: Kemeja Pria 50 → 51
    - Insert retur transaction
    - Jurnal retur:
 
@@ -281,9 +306,11 @@ Sarah: "retur jual kemeja 1 rusak"
 
 5. WA balas:
 ```
-✅ Retur tercatat!
-🔄 Kemeja Pria: +1 pcs (stok: 69)
-💰 Refund: Rp 150.000
+✅ *Retur Penjualan Berhasil!*
+
+📦 Produk : Kemeja Pria x 1
+💵 Nilai : Rp 150.000
+📝 Alasan : rusak
 ```
 
 ---
@@ -498,13 +525,63 @@ Kredit 1201 (Inventori)  Rp 210.000
 
 ---
 
+## Skenario 11: Fitur Lanjutan via WA
+
+### Cek Piutang
+```
+Sarah: "cek piutang"
+```
+
+```
+📋 *Daftar Piutang*
+
+1. Bu Maya        | Rp 500.000 | Jatuh tempo: 3 hari lagi ⚠️
+2. Toko Sri       | Rp 200.000 | Jatuh tempo: 10 hari lagi
+3. Pak Budi       | Rp 150.000 | Jatuh tempo: 2 hari lagi ⚠️
+
+Total Piutang: Rp 850.000
+```
+
+### Bahan Keluar Manual
+```
+Sarah: "bahan keluar kain katun 5"
+```
+
+Sistem panggil `handleBahanKeluar` di `stock-handler.ts:164`:
+
+```
+✅ *Bahan Keluar* Kain Katun
+
+150 meter → 145 meter
+```
+
+### Laporan Laba Rugi via WA
+```
+Sarah: "laba rugi"
+```
+
+```
+📊 *Laba Rugi — RumahKain*
+📅 Hari ini
+
+💰 Pendapatan: Rp 0
+📦 HPP: Rp 0
+💼 Laba Kotor: Rp 0
+📉 Beban: Rp 0
+✅ *Laba Bersih: Rp 0*
+
+💡 Ketik *Laporan* untuk rekap 7 hari.
+```
+
+---
+
 ## Ringkasan Dampak Tata Business Suite
 
 ### Sebelum Pakai Tata (Manual)
 
 | Aktivitas | Cara Lama | Waktu | Masalah |
 |-----------|-----------|-------|---------|
-| Catat jualan | Buku nota + kalkulator | 5 menit/transaksi | Sering lupa, salah hitung |
+| Catat penjualan | Buku nota + kalkulator | 5 menit/transaksi | Sering lupa, salah hitung |
 | Stok barang | Cek fisik lemari | 30 menit/hari | Kehabisan stok tanpa tahu |
 | Hitung laba | Akhir bulan + Excel | 1 hari | Salah, tidak akurat |
 | Rekap per channel | Manual pisah-pisah | 2 jam | Tidak tahu channel mana yang untung |
@@ -516,7 +593,7 @@ Kredit 1201 (Inventori)  Rp 210.000
 
 | Aktivitas | Cara Baru | Waktu | Dampak |
 |-----------|-----------|-------|--------|
-| Catat jualan | WA: "jual tokopedia kemeja 2" | 5 detik | Otomatis kurangi stok + catat keuangan + deduksi BOM |
+| Catat penjualan | WA: "Keluar kemeja 2" → dialog pilih channel | 10 detik | Otomatis kurangi stok + catat keuangan + deduksi BOM |
 | Cek stok | WA: "stok kemeja" | 2 detik | Langsung tahu sisa + peringatan jika mau habis |
 | Cek laba | Dashboard `/stock/keuangan` | 10 detik | Laba kotor, laba bersih, per channel real-time |
 | Channel profit | Dashboard automatic | Real-time | Tahu Tokopedia lebih untung daripada Shopee |
@@ -524,6 +601,8 @@ Kredit 1201 (Inventori)  Rp 210.000
 | Restok bahan | WA: "bahan masuk kain 50" | 5 detik | Stok bahan selalu update |
 | Opname stok | Dashboard → scan barcode | 10 menit | Deteksi selisih, koreksi otomatis |
 | Laporan P&L | Generate otomatis | Real-time | Tanpa biaya akuntan |
+| Undo transaksi | WA: "undo" | 5 detik | Batalkan transaksi salah + balikin stok |
+| Laporan Laba Rugi | WA: "laba rugi" | 2 detik | Cek laba hari ini tanpa buka dashboard |
 
 ### Dampak Finansial (Estimasi Bulanan)
 
@@ -541,75 +620,78 @@ Kredit 1201 (Inventori)  Rp 210.000
 ## Arsitektur Ujung ke Ujung (Ringkasan Teknis)
 
 ```
-┌──────────────┐     ┌─────────────────┐     ┌───────────────┐
-│  WhatsApp     │────▶│  message.ts      │────▶│  stockManager  │
-│  Pengguna     │     │  (orchestrator)  │     │  .executeSale  │
-└──────────────┘     │  + stock-handler  │     └───────┬───────┘
-                     └─────────────────┘             │
-┌──────────────┐     ┌─────────────────┐             ▼
-│  Browser      │────▶│  api.ts          │────▶┌───────────────┐
-│  Dashboard    │     │  (REST routes)   │     │ transaction   │
-└──────────────┘     └─────────────────┘     │ Recorder      │
-                            │                 │ .recordSale   │
-                     ┌───────┴───────┐        └───────┬───────┘
-                     │  validate.ts   │               │
-                     │  (Zod schema)  │        ┌───────▼───────┐
-                     └───────────────┘        │ accounting    │
-                                              │ Engine       │
-                     ┌───────────────┐        │ .insertJourn  │
-                     │  circuit-     │        └───────┬───────┘
-                     │  breaker.ts   │               │
-                     └───────────────┘               ▼
-                                              ┌───────────────┐
-                                              │  PostgreSQL    │
-                                              │  (via pgPool   │
-                                              │   + Supabase)  │
-                                              └───────────────┘
+┌──────────────┐     ┌─────────────────┐     ┌──────────────────┐
+│  WhatsApp     │────▶│  message.ts      │────▶│  stockManager     │
+│  Pengguna     │     │  (orchestrator)  │     │  .searchProduct   │
+└──────────────┘     │  + stock-handler  │     └────────┬─────────┘
+                     │  + dialog-state   │              │
+                     └─────────────────┘              ▼
+┌──────────────┐     ┌─────────────────┐     ┌──────────────────┐
+│  Browser      │────▶│  api.ts          │────▶│  transaction      │
+│  Dashboard    │     │  (REST routes)   │     │  Recorder         │
+└──────────────┘     └─────────────────┘     │  .recordStockAdj  │
+                     ┌───────────────┐        └────────┬─────────┘
+                     │  circuit-     │                 │
+                     │  breaker.ts   │        ┌────────▼─────────┐
+                     └───────────────┘        │  accounting       │
+                                              │  Engine           │
+                     ┌───────────────┐        │  .insertJournal   │
+                     │  validate.ts  │        └────────┬─────────┘
+                     │  (Zod schema) │                 │
+                     └───────────────┘                 ▼
+                                              ┌──────────────────┐
+                                              │  PostgreSQL       │
+                                              │  (via pgPool      │
+                                              │   + Supabase)     │
+                                              └──────────────────┘
 ```
 
-### Alur Data Satu Transaksi "Jual Tokopedia Kemeja 2":
+### Alur Data Satu Transaksi "Keluar kemeja 2" → pilih channel "Tokopedia":
 
 ```
-1. WA Message
+1. WA Message: "Keluar kemeja 2"
    ↓
-2. message.ts: regex parse → channel="Tokopedia", product="Kemeja", qty=2
+2. message.ts: regex parse → product="kemeja", qty=2, type='out'
    ↓
-3. handleSaleCommand → stockManager.searchProductByName("Kemeja") → match
+3. handleStockInOutCommand
+   → stockManager.searchProductByName("kemeja") → Kemeja Pria
+   → channels = ["Tokopedia", "Shopee", "Offline"]
+   → channels.length > 1 → setDialog('keluar_channel', { productId, qty, channels })
+   → reply "Pilih channel 1-3"
    ↓
-4. stockManager.executeSale(userId, productId, 2, "Tokopedia")
+4. User reply: "1"
+   → dialog handler keluar_channel → channel = "Tokopedia"
    ↓
-5. recordSale (dalam DB transaction)
-   ├── resolveChannel("Tokopedia") → { coaCode: '4101', adminFeePct: 2% }
-   ├── SELECT stock FOR UPDATE → cek stok
+5. executeStockAdjustment → recordStockAdjustment (dalam DB transaction)
+   ├── SELECT product FOR UPDATE → cek stok
    ├── UPDATE products SET stock_current = 48
    ├── INSERT stock_movements (out, 2 pcs)
-   ├── INSERT transactions (masuk, amount=300.000, profit=144.000, hpp=150.000)
-   ├── accountingEngine.insertJournalViaClient → 5 baris jurnal
-   │   ├─ 1101 (Kas) Debit Rp 294.000
-   │   ├─ 6105 (Beban Admin) Debit Rp 6.000
-   │   ├─ 4101 (Penjualan) Credit Rp 300.000
-   │   ├─ 5101 (HPP) Debit Rp 150.000
-   │   └─ 1201 (Inventori) Credit Rp 150.000
-   └── [if piutang] → INSERT receivables + jurnal piutang
+   ├── resolveChannel("Tokopedia") → { coaCode: '4101', adminFeePct: 2% }
+   ├── INSERT jurnal (5 baris: Kas, Beban Admin, Penjualan, HPP, Inventori)
+   ├── INSERT transactions (masuk, amount=300.000, profit=144.000)
+   └── [jika ada hutang/piutang] → INSERT receivables
    ↓
 6. deductPackaging (non-blocking, setelah transaksi)
-   ├── getRecipes → { Kain Katun: 1.5m, Benang: 2pcs, Kancing: 8pcs }
+   ├── getResep → { Kain Katun: 1.5m, Benang: 2pcs, Kancing: 8pcs }
    ├── UPDATE bom_materials SET stock_current -= 3, -= 4, -= 16
    └── INSERT bom_deduction_logs
    ↓
 7. Balasan WA:
-   "✅ Uang Masuk: Rp 294.000 (Tokopedia)
-    📦 Kemeja Pria: -2 pcs (sisa: 48)
-    📦 Bahan: Kain Katun -3m, Benang -4pcs, Kancing -16pcs"
+   "✅ *Terjual* Kemeja Pria
+    50 pcs → 48 pcs
+    📦 *Bahan terpakai*:
+    • Kain Katun: -3 meter
+    • Benang: -4 pcs
+    • Kancing: -16 pcs"
    ↓
 8. Dashboard real-time update (socket.io):
    ├── Overview → kas, omzet update
    ├── Products → stok 48
    ├── Materials → Kain 147m
-   ├── Laba Rugi → +Rp 294.000 revenue
+   ├── Laba Rugi → +Rp 300.000 revenue
    └── Channel Profitability → Tokopedia +Rp 294.000
 ```
 
 ---
 
-> Dari satu pesan WA `"jual tokopedia kemeja 2"`, sistem mencatat **8 hal sekaligus**: transaksi, stok, jurnal akuntansi, BOM deduction, channel profitability, laba rugi, rekap dashboard, dan notifikasi real-time. Semua tanpa perlu buka laptop atau aplikasi.
+> Dari satu pesan WA `"Keluar kemeja 2"` dilanjut `"1"` (pilih channel), sistem mencatat **8 hal sekaligus**: transaksi, stok, jurnal akuntansi, BOM deduction, channel profitability, laba rugi, rekap dashboard, dan notifikasi real-time. Semua tanpa perlu buka laptop atau aplikasi.

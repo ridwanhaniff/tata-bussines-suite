@@ -19,16 +19,19 @@ setSupabase(supabase);
 
 // Fix Supabase schema permissions — bypass PostgREST schema denial
 if (pgPool) {
-  pgPool.query(`
+  pgPool
+    .query(
+      `
     GRANT USAGE ON SCHEMA public TO service_role, anon, authenticated;
     GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
     GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
     GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO service_role, anon, authenticated;
-  `).then(() => addLog('info', '[DB] Schema & sequence permissions granted'))
-  .catch((err: Error) => addLog('warn', `[DB] Schema grant (non-fatal): ${err.message}`));
-
+  `,
+    )
+    .then(() => addLog('info', '[DB] Schema & sequence permissions granted'))
+    .catch((err: Error) => addLog('warn', `[DB] Schema grant (non-fatal): ${err.message}`));
 }
 
 const server = http.createServer(app);
@@ -47,8 +50,18 @@ io.on('connection', (socket) => {
   socket.on('register_user', (userId: string) => {
     if (userId) socket.join(userId);
   });
-  socket.emit('status', { botStatus: state.botStatus, clientReady: state.clientReady, currentQR: state.currentQR, pairingCode: state.pairingCode });
-  socket.emit('bot_update', { botStatus: state.botStatus, clientReady: state.clientReady, currentQR: state.currentQR, pairingCode: state.pairingCode });
+  socket.emit('status', {
+    botStatus: state.botStatus,
+    clientReady: state.clientReady,
+    currentQR: state.currentQR,
+    pairingCode: state.pairingCode,
+  });
+  socket.emit('bot_update', {
+    botStatus: state.botStatus,
+    clientReady: state.clientReady,
+    currentQR: state.currentQR,
+    pairingCode: state.pairingCode,
+  });
   socket.on('wa_restart', async () => {
     addLog('info', '[SOCKET] Manual restart requested');
     await safeDestroyClient();
@@ -60,7 +73,11 @@ io.on('connection', (socket) => {
     await safeDestroyClient();
     const fs = await import('fs');
     if (fs.existsSync(SESSION_BASE_DIR)) {
-      try { fs.rmSync(SESSION_BASE_DIR, { recursive: true, force: true }); } catch { /* empty */ }
+      try {
+        fs.rmSync(SESSION_BASE_DIR, { recursive: true, force: true });
+      } catch {
+        /* empty */
+      }
     }
     await supabase.from('wa_session_backup').delete().eq('user_id', 'default');
     state.waRetryCount = 0;
@@ -86,8 +103,13 @@ process.on('unhandledRejection', async (reason) => {
 const shutdown = async (signal: string) => {
   console.log(`\n[SYSTEM] Menerima sinyal ${signal}. Menutup proses...`);
   await sendEmergencyBroadcast(`Server shutdown — signal: ${signal}`);
-  try { if (state.waClient) await state.waClient.destroy(); } catch { /* empty */ }
-  finally { process.exit(0); }
+  try {
+    if (state.waClient) await state.waClient.destroy();
+  } catch {
+    /* empty */
+  } finally {
+    process.exit(0);
+  }
 };
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
@@ -143,7 +165,10 @@ server.listen(PORT, async () => {
       addLog('info', '[STORAGE] Bucket product-images created');
     }
   } catch (err: any) {
-    addLog('warn', `[STORAGE] Bucket product-images setup (non-fatal): ${err.message}. Buat manual di Supabase dashboard jika perlu.`);
+    addLog(
+      'warn',
+      `[STORAGE] Bucket product-images setup (non-fatal): ${err.message}. Buat manual di Supabase dashboard jika perlu.`,
+    );
   }
 
   resetBootStatus();
@@ -177,21 +202,35 @@ server.listen(PORT, async () => {
             if (m) mountType = m[1];
           }
         }
-      } catch { /* no permission for mount read */ }
+      } catch {
+        /* no permission for mount read */
+      }
     }
 
     if (mountType) {
       const lower = mountType.toLowerCase();
       if (lower.includes('nfs') || lower.includes('fuse')) {
-        addLog('warn', '[STORAGE] /data terindikasi mount NFS/FUSE (kemungkinan Storage Bucket) — ada risiko file-locking/corruption untuk sesi Chromium whatsapp-web.js pada penggunaan intensif jangka panjang. Pertimbangkan Persistent Storage disk klasik untuk /data, dan gunakan bucket khusus untuk backup, bukan sesi live.');
+        addLog(
+          'warn',
+          '[STORAGE] /data terindikasi mount NFS/FUSE (kemungkinan Storage Bucket) — ada risiko file-locking/corruption untuk sesi Chromium whatsapp-web.js pada penggunaan intensif jangka panjang. Pertimbangkan Persistent Storage disk klasik untuk /data, dan gunakan bucket khusus untuk backup, bukan sesi live.',
+        );
       } else {
-        addLog('info', `[STORAGE] /data filesystem type: ${mountType}${lower.includes('ext') || lower.includes('btrfs') || lower.includes('xfs') ? ' — disk klasik, aman untuk sesi WhatsApp.' : ''}`);
+        addLog(
+          'info',
+          `[STORAGE] /data filesystem type: ${mountType}${lower.includes('ext') || lower.includes('btrfs') || lower.includes('xfs') ? ' — disk klasik, aman untuk sesi WhatsApp.' : ''}`,
+        );
       }
     } else {
-      addLog('warn', '[STORAGE] Tidak dapat dipastikan jenis storage /data — perlu verifikasi manual di Space Settings.');
+      addLog(
+        'warn',
+        '[STORAGE] Tidak dapat dipastikan jenis storage /data — perlu verifikasi manual di Space Settings.',
+      );
     }
   } catch {
-    addLog('warn', '[STORAGE] /data tidak writable — Persistent Storage kemungkinan BELUM aktif di Space Settings. Sesi WhatsApp akan hilang saat restart!');
+    addLog(
+      'warn',
+      '[STORAGE] /data tidak writable — Persistent Storage kemungkinan BELUM aktif di Space Settings. Sesi WhatsApp akan hilang saat restart!',
+    );
   }
 
   restoreSessionDirFromDB('default').finally(() => {

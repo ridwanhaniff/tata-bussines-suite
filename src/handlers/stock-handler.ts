@@ -118,13 +118,21 @@ async function handleStockReport(msg: Message, user: any): Promise<boolean> {
 async function handleBahanList(msg: Message, user: any): Promise<boolean> {
   const result = await stockManager.listMaterials(user.id);
   if (!result.success || !result.materials || result.materials.length === 0) {
-    await safeReply(msg, `📦 *Bahan Baku*\n\nBelum ada material terdaftar.\nTambah via dashboard: *Produk → Bahan Baku*`);
+    await safeReply(
+      msg,
+      `📦 *Bahan Baku*\n\nBelum ada material terdaftar.\nTambah via dashboard: *Produk → Bahan Baku*`,
+    );
     return true;
   }
   const mats = result.materials as any[];
   let text = `📦 *Bahan Baku - ${user.store_name}*\n\n`;
   mats.forEach((m: any) => {
-    const status = parseFloat(m.stock_current) <= 0 ? ' ❌ HABIS' : parseFloat(m.stock_current) <= parseFloat(m.stock_min) ? ' ⚠️' : '';
+    const status =
+      parseFloat(m.stock_current) <= 0
+        ? ' ❌ HABIS'
+        : parseFloat(m.stock_current) <= parseFloat(m.stock_min)
+          ? ' ⚠️'
+          : '';
     text += `• *${m.name}*: ${stockManager.formatQty(m.stock_current, m.unit)} ${m.unit}${status}\n`;
   });
   text += `\nKetik *Bahan masuk [nama] [jumlah]* untuk restock.`;
@@ -157,7 +165,10 @@ async function handleBahanMasuk(msg: Message, user: any, materialQuery: string, 
     await safeReply(msg, `❌ Gagal update stok: ${result.error}`);
     return true;
   }
-  await safeReply(msg, `✅ *${match.name}*: ${stockManager.formatQty(stockBefore, match.unit)} → ${stockManager.formatQty(stockAfter, match.unit)} ${match.unit}`);
+  await safeReply(
+    msg,
+    `✅ *${match.name}*: ${stockManager.formatQty(stockBefore, match.unit)} → ${stockManager.formatQty(stockAfter, match.unit)} ${match.unit}`,
+  );
   return true;
 }
 
@@ -179,7 +190,10 @@ async function handleBahanKeluar(msg: Message, user: any, materialQuery: string,
   }
   const stockBefore = parseFloat(match.stock_current) || 0;
   if (stockBefore < qty) {
-    await safeReply(msg, `⚠️ Stok ${match.name} tidak cukup. Tersedia: ${stockManager.formatQty(stockBefore, match.unit)} ${match.unit}`);
+    await safeReply(
+      msg,
+      `⚠️ Stok ${match.name} tidak cukup. Tersedia: ${stockManager.formatQty(stockBefore, match.unit)} ${match.unit}`,
+    );
     return true;
   }
   const stockAfter = stockBefore - qty;
@@ -190,7 +204,10 @@ async function handleBahanKeluar(msg: Message, user: any, materialQuery: string,
     await safeReply(msg, `❌ Gagal update stok: ${result.error}`);
     return true;
   }
-  await safeReply(msg, `✅ *${match.name}*: ${stockManager.formatQty(stockBefore, match.unit)} → ${stockManager.formatQty(stockAfter, match.unit)} ${match.unit}`);
+  await safeReply(
+    msg,
+    `✅ *${match.name}*: ${stockManager.formatQty(stockBefore, match.unit)} → ${stockManager.formatQty(stockAfter, match.unit)} ${match.unit}`,
+  );
   return true;
 }
 
@@ -203,7 +220,10 @@ async function handleResep(msg: Message, user: any, productQuery: string): Promi
   const product = prodResult.products[0] as any;
   const recipeResult = await stockManager.getRecipes(user.id, product.id);
   if (!recipeResult.success || (recipeResult.recipes as any[]).length === 0) {
-    await safeReply(msg, `📋 *Resep ${product.name}*\n\nBelum ada resep BOM untuk produk ini.\nAtur via dashboard: *Produk → ${product.name} → Atur Resep*`);
+    await safeReply(
+      msg,
+      `📋 *Resep ${product.name}*\n\nBelum ada resep BOM untuk produk ini.\nAtur via dashboard: *Produk → ${product.name} → Atur Resep*`,
+    );
     return true;
   }
   const recipes = recipeResult.recipes as any[];
@@ -224,4 +244,12 @@ async function handleResep(msg: Message, user: any, productQuery: string): Promi
   return true;
 }
 
-export { handleStockList, handleStockInfo, handleStockReport, handleBahanList, handleBahanMasuk, handleBahanKeluar, handleResep };
+export {
+  handleStockList,
+  handleStockInfo,
+  handleStockReport,
+  handleBahanList,
+  handleBahanMasuk,
+  handleBahanKeluar,
+  handleResep,
+};

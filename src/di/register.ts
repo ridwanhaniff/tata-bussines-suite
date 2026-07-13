@@ -12,6 +12,5 @@ export function registerDependencies(): void {
   container.registerSingleton<IEventBus>(TOKENS.EventBus, EventBus);
   container.registerSingleton<IStateService>(TOKENS.StateService, RedisStateService);
 
-
   container.registerInstance(TOKENS.Supabase, supabase);
 }
