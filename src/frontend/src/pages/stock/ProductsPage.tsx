@@ -124,8 +124,8 @@ export function ProductsPage() {
     }
   }, [form.name]);
 
-  const IMAGE_MAX_WIDTH = 800;
-  const IMAGE_QUALITY = 0.7;
+  const IMAGE_MAX_WIDTH = 1200;
+  const IMAGE_QUALITY = 0.85;
 
   function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -424,11 +424,11 @@ export function ProductsPage() {
                   <td>
                     {p.image_url ? (
                       <img src={p.image_url} alt={p.name}
-                        style={{ width: 40, height: 40, borderRadius: 4, objectFit: 'cover' }}
+                        style={{ width: 60, height: 60, borderRadius: 6, objectFit: 'cover' }}
                         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                       />
                     ) : (
-                      <div style={{ width: 40, height: 40, borderRadius: 4, background: 'var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: 'var(--text-muted)' }}>
+                      <div style={{ width: 60, height: 60, borderRadius: 6, background: 'var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
                         -
                       </div>
                     )}
@@ -655,7 +655,7 @@ export function ProductsPage() {
                 {productImage ? (
                   <div style={{ position: 'relative' }}>
                     <img src={productImage} alt="Preview"
-                      style={{ width: 80, height: 80, borderRadius: 8, objectFit: 'cover', border: '1px solid var(--border)' }}
+                      style={{ width: 120, height: 120, borderRadius: 10, objectFit: 'cover', border: '1px solid var(--border)' }}
                     />
                     <button
                       onClick={handleRemoveImage}
@@ -672,9 +672,9 @@ export function ProductsPage() {
                   <div
                     onClick={() => document.getElementById('product-image-input')?.click()}
                     style={{
-                      width: 80, height: 80, borderRadius: 8, border: '2px dashed var(--border)',
+                      width: 120, height: 120, borderRadius: 10, border: '2px dashed var(--border)',
                       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                      cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.7rem', gap: '0.25rem',
+                      cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.75rem', gap: '0.3rem',
                       transition: 'border-color 0.2s',
                     }}
                     onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = 'var(--primary)'; }}
