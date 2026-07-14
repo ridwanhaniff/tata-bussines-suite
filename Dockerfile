@@ -68,25 +68,29 @@ RUN npm install -g npm@11 \
 # ── 3. Copy Source Code ───────────────────────────────────────
 COPY . .
 
-# ── 4. Build Frontend (SPA) ────────────────────────────────────
-RUN npm run build:frontend
-
-# ── 5. Environment Variables ──────────────────────────────────
-ENV PORT=7860 \
-    HOME=/tmp \
-    NODE_OPTIONS="--max-old-space-size=512" \
+# ── 4. Memory Limit (before build) ─────────────────────────────
+# 320MB agar masih ada ~192MB untuk Chromium (~150-300MB) + OS
+# dalam total 512MB RAM HF Space
+ENV NODE_OPTIONS="--max-old-space-size=320" \
     NODE_ENV=production
 
-# ── 6. Permissions + Temp Directories ─────────────────────────
+# ── 5. Build Frontend (SPA) ────────────────────────────────────
+RUN npm run build:frontend
+
+# ── 6. Runtime Env ─────────────────────────────────────────────
+ENV PORT=7860 \
+    HOME=/tmp
+
+# ── 7. Permissions + Temp Directories ─────────────────────────
 RUN chmod -R 777 /app \
     && mkdir -p /tmp/.config /tmp/.cache \
     && chmod -R 777 /tmp
 
-# ── 7. Health Check ───────────────────────────────────────────
+# ── 8. Health Check ───────────────────────────────────────────
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
     CMD node -e "fetch('http://localhost:7860/ping').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))" || exit 1
 
 EXPOSE 7860
 
-# ── 8. Start ──────────────────────────────────────────────────
+# ── 9. Start ──────────────────────────────────────────────────
 CMD ["node", "index.js"]

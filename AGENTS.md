@@ -124,6 +124,7 @@ Pola kegagalan berulang: agent memperbaiki bug A, menyentuh kode sekitar tanpa s
 
 | 47 | TDZ `Cannot access before initialization` di ProductsPage | `allMaterials` dideklarasikan (line 116) setelah `bomTotalCost` useMemo (line 69). React `mountMemo` panggil factory function segera, akses `allMaterials.find(...)` terjadi sebelum deklarasi → TDZ. Fix: pindah `materialsQuery` + `allMaterials` sebelum `bomTotalCost`. | `ProductsPage.tsx` `allMaterials` declare sebelum `bomTotalCost`; `grep "const allMaterials"` ada di line 77, bukan line 116 |
 | 48 | Scheduler WA gagal kirim karena `state.clientReady` tidak dicek | 8 fungsi scheduler (`sendMorningGreeting`, `sendEveningReminder`, `sendDailyCombined`, `sendReport`, `checkStockAlerts`, `checkOverduePiutang`, `checkOverdueHutang`, `checkExpiryWarning`) tidak guard `state.clientReady` — hanya cek `state.waClient` null. `sendMessage` dipanggil sebelum WA siap → silent fail. Fix: tambah `if (!state.clientReady) return` di 8 fungsi + perbaiki `catch` di morning/evening agar log `err.message`. | `scheduler.ts` setiap fungsi di atas punya `if (!state.clientReady)` guard setelah null-check; `sendMorningGreeting` & `sendEveningReminder` `catch` pakai `err.message` |
+| 49 | Dockerfile OOM — `NODE_OPTIONS` terlalu besar + setelah build | `NODE_OPTIONS=--max-old-space-size=512` ditempatkan SETELAH `npm run build:frontend`, jadi build tanpa limit (default ~2GB) → OOM di HF Space 512MB. Runtime juga 512MB + Chromium ~300MB > 512MB → OOM restart loop. Fix: pindah sebelum build + turunkan ke 320MB. | `Dockerfile:71-82` `ENV NODE_OPTIONS=--max-old-space-size=320` sebelum build; runtime `NODE_OPTIONS` tidak perlu di-set ulang (inherited) |
 
  Setelah perbaiki bug baru, **tambahkan baris ke tabel ini** di file ini. Bug #29 (StockCategories saving state) sudah obsolete karena file dihapus.
 
@@ -192,7 +193,7 @@ index.js → src/app.ts (Express + Socket.IO)
 - **DB**: Supabase REST API (via `@supabase/supabase-js`) + pgPool fallback (`DATABASE_URL`). Supabase sering return 42501 permission → banyak endpoint punya pgPool fallback via `information_schema.columns` auto-detection.
 - **Session**: `express-session` + `connect-pg-simple`. PgBouncer (port 6543) auto-used jika DATABASE_URL mengandung `supabase.co`. Wajib `schemaName: 'public'` di options.
 - **WA**: `whatsapp-web.js` + `puppeteer` (Chromium system, bukan bundled). Args wajib: `--no-sandbox`, `--disable-dev-shm-usage`, `--single-process`. Retry: 8x max, exponential backoff 5s→300s.
-- **Build**: Dockerfile build frontend BEFORE `NODE_OPTIONS=--max-old-space-size=512` (agar tidak OOM). Vite output ke `public/dist/`.
+- **Build**: Dockerfile set `NODE_OPTIONS=--max-old-space-size=320` SEBELUM build + runtime. 320MB sisakan ~192MB untuk Chromium dalam 512MB RAM HF Space. Vite output ke `public/dist/`.
 - **Port**: 7860 (HF Space default) atau `PORT` env.
 
 ### Migration
