@@ -194,6 +194,10 @@ async function sendReport(
       return false;
     }
   }
+  if (!state.clientReady) {
+    logWarn('[SCHEDULER] WA client not ready, skip sendReport');
+    return false;
+  }
   try {
     const { data: trans, error } = (await supabase
       .from('transactions')
@@ -427,6 +431,10 @@ async function sendMorningGreeting(client: any): Promise<void> {
       return;
     }
   }
+  if (!state.clientReady) {
+    logWarn('[SCHEDULER] WA client not ready, skip sendMorningGreeting');
+    return;
+  }
   logInfo('[CRON] Sapaan Pagi...');
   try {
     const { data: users, error } = (await supabase
@@ -453,8 +461,8 @@ async function sendMorningGreeting(client: any): Promise<void> {
         const greetFn = greetings[dayOfWeek % greetings.length];
         await client.sendMessage(u.id, greetFn(u.store_name));
         sent++;
-      } catch {
-        logError('[CRON] morning greeting failed for ' + u.id);
+      } catch (err: any) {
+        logError(`[CRON] morning greeting failed for ${u.id}: ${err.message}`);
       }
       await sleep(600);
     }
@@ -471,6 +479,10 @@ async function sendEveningReminder(client: any): Promise<void> {
       logWarn('[SCHEDULER] WA client null, skip sendEveningReminder');
       return;
     }
+  }
+  if (!state.clientReady) {
+    logWarn('[SCHEDULER] WA client not ready, skip sendEveningReminder');
+    return;
   }
   logInfo('[CRON] Pengingat Sore...');
   try {
@@ -503,7 +515,8 @@ async function sendEveningReminder(client: any): Promise<void> {
           `🌆 *Halo Bos ${u.store_name}!*\n\nKami lihat hari ini belum ada transaksi yang tercatat. 📭\n\nMungkin terlupa? Yuk catat sekarang sebelum lupa:\n📥 Masuk : *Jual kopi 50rb*\n📤 Keluar: *Beli bahan 120rb*\n\nCatatan yang rapi hari ini bikin laporan malam nanti lebih akurat. 📊`,
         );
         reminded++;
-      } catch {
+      } catch (err: any) {
+        logError(`[CRON] evening reminder failed for ${u.id}: ${err.message}`);
         skipped++;
       }
       await sleep(600);
@@ -521,6 +534,10 @@ async function checkStockAlerts(client: any): Promise<void> {
       logWarn('[SCHEDULER] WA client null, skip checkStockAlerts');
       return;
     }
+  }
+  if (!state.clientReady) {
+    logWarn('[SCHEDULER] WA client not ready, skip checkStockAlerts');
+    return;
   }
   logInfo('[CRON] Stock Alert Checker...');
   try {
@@ -583,6 +600,10 @@ async function checkOverduePiutang(client: any): Promise<void> {
       logWarn('[SCHEDULER] WA client null, skip checkOverduePiutang');
       return;
     }
+  }
+  if (!state.clientReady) {
+    logWarn('[SCHEDULER] WA client not ready, skip checkOverduePiutang');
+    return;
   }
   logInfo('[CRON] Cek Piutang Jatuh Tempo...');
   try {
@@ -661,6 +682,10 @@ async function checkOverdueHutang(client: any): Promise<void> {
       logWarn('[SCHEDULER] WA client null, skip checkOverdueHutang');
       return;
     }
+  }
+  if (!state.clientReady) {
+    logWarn('[SCHEDULER] WA client not ready, skip checkOverdueHutang');
+    return;
   }
   logInfo('[CRON] Cek Hutang Jatuh Tempo...');
   try {
@@ -744,6 +769,10 @@ async function checkExpiryWarning(client: any): Promise<void> {
       return;
     }
   }
+  if (!state.clientReady) {
+    logWarn('[SCHEDULER] WA client not ready, skip checkExpiryWarning');
+    return;
+  }
   logInfo('[CRON] Cek Peringatan Expiry...');
   try {
     const now = new Date();
@@ -811,6 +840,10 @@ async function sendDailyCombined(client: any, userId: string, storeName: string,
       logWarn('[SCHEDULER] WA client null, skip sendDailyCombined');
       return false;
     }
+  }
+  if (!state.clientReady) {
+    logWarn('[SCHEDULER] WA client not ready, skip sendDailyCombined');
+    return false;
   }
   try {
     const today = new Date();

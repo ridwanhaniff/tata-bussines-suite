@@ -122,6 +122,9 @@ Pola kegagalan berulang: agent memperbaiki bug A, menyentuh kode sekitar tanpa s
 | 45 | Performance — cache laporan + limit pencarian | Tambah cache 60-120s di laba-rugi, product-sales, dashboard/charts. Tambah `.limit(5)` di `searchProductByName`. | `api.ts` ada cache key di 3 endpoint; `stockManager.ts:221` ada `.limit(5)` |
 | 46 | Enhancement — wizard step 4 Harga Beli | Pindah field `price_buy` dari step 1 ke step 4 baru setelah BOM. Tampilkan total biaya BOM sebagai referensi. Edit mode tetap tampilkan price_buy di form utama. | `ProductsPage.tsx` wizardTabs 4 item, step 4 render total biaya BOM + RupiahInput price_buy; `editProduct` render price_buy di form |
 
+| 47 | TDZ `Cannot access before initialization` di ProductsPage | `allMaterials` dideklarasikan (line 116) setelah `bomTotalCost` useMemo (line 69). React `mountMemo` panggil factory function segera, akses `allMaterials.find(...)` terjadi sebelum deklarasi → TDZ. Fix: pindah `materialsQuery` + `allMaterials` sebelum `bomTotalCost`. | `ProductsPage.tsx` `allMaterials` declare sebelum `bomTotalCost`; `grep "const allMaterials"` ada di line 77, bukan line 116 |
+| 48 | Scheduler WA gagal kirim karena `state.clientReady` tidak dicek | 8 fungsi scheduler (`sendMorningGreeting`, `sendEveningReminder`, `sendDailyCombined`, `sendReport`, `checkStockAlerts`, `checkOverduePiutang`, `checkOverdueHutang`, `checkExpiryWarning`) tidak guard `state.clientReady` — hanya cek `state.waClient` null. `sendMessage` dipanggil sebelum WA siap → silent fail. Fix: tambah `if (!state.clientReady) return` di 8 fungsi + perbaiki `catch` di morning/evening agar log `err.message`. | `scheduler.ts` setiap fungsi di atas punya `if (!state.clientReady)` guard setelah null-check; `sendMorningGreeting` & `sendEveningReminder` `catch` pakai `err.message` |
+
  Setelah perbaiki bug baru, **tambahkan baris ke tabel ini** di file ini. Bug #29 (StockCategories saving state) sudah obsolete karena file dihapus.
 
 ---
