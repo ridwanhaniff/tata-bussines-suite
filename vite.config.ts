@@ -16,14 +16,12 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, 'public/dist'),
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1500,
     rollupOptions: {
       input: path.resolve(frontendDir, 'index.html'),
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom', 'zustand'],
-          charts: ['chart.js', 'react-chartjs-2'],
-          scanner: ['html5-qrcode'],
-        },
+        // manualChunks disabled temporarily — was causing
+        // "Cannot access before initialization" in production
       },
     },
   },
