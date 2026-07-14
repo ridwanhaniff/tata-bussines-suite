@@ -44,12 +44,6 @@ interface UpdateProductData {
   is_active?: boolean;
 }
 
-interface ListFilters {
-  active?: boolean;
-  category?: string;
-  lowStock?: boolean;
-}
-
 interface StockMovementData {
   type: string;
   quantity: number;
@@ -182,24 +176,6 @@ async function getProduct(
   }
 }
 
-async function listProducts(
-  userId: string,
-  filters: ListFilters = {},
-): Promise<{ success: boolean; products?: unknown[]; error?: string }> {
-  try {
-    let query: any = supabase.from('products').select('*').eq('user_id', userId);
-    if (filters.active !== undefined) query = query.eq('is_active', filters.active);
-    if (filters.category) query = query.eq('category', filters.category);
-    if (filters.lowStock) query = query.filter('stock_current', 'lt', 'stock_min');
-    query = query.order('name', { ascending: true });
-    const { data, error } = await query;
-    if (error) throw error;
-    return { success: true, products: data || [], error: undefined };
-  } catch (err: any) {
-    return { success: false, error: sanitizeError(err) };
-  }
-}
-
 // ── Smart Product Search ──
 
 async function searchProductByName(
@@ -218,7 +194,8 @@ async function searchProductByName(
       .eq('user_id', userId)
       .eq('is_active', true)
       .ilike('name', `%${safeTerm}%`)
-      .order('name', { ascending: true });
+      .order('name', { ascending: true })
+      .limit(5);
     if (error) throw error;
     return { success: true, products: data || [], error: undefined };
   } catch (err: any) {
@@ -770,7 +747,6 @@ export {
   updateProduct,
   deleteProduct,
   getProduct,
-  listProducts,
   searchProductByName,
   getStockHistory,
   getPendingAlerts,

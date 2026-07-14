@@ -357,7 +357,6 @@ export const KW_BATAL: readonly string[] = [
 ];
 
 export const KW_STOCK: readonly string[] = ['stok', 'stock', 'persediaan', 'inventori', 'inventory', 'gudang'];
-export const KW_PRODUCT: readonly string[] = ['produk', 'barang', 'item'];
 export const KW_DASHBOARD: readonly string[] = [
   'dashboard',
   'web',
@@ -380,8 +379,3 @@ export const KW_DASHBOARD: readonly string[] = [
   'inventori saya',
 ];
 
-// ── BOM / Material ──
-export const KW_BAHAN: readonly string[] = ['bahan', 'material', 'bahan baku'];
-export const KW_BAHAN_MASUK: readonly string[] = ['bahan masuk', 'material masuk', 'restock bahan'];
-export const KW_BAHAN_KELUAR: readonly string[] = ['bahan keluar', 'material keluar', 'bahan terpakai'];
-export const KW_RESEP: readonly string[] = ['resep', 'bom', 'komposisi', 'bahan produksi'];

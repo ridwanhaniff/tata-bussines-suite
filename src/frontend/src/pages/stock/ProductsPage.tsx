@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useStockStore } from '../../store/stockStore';
 import { stockApi, bomApi } from '../../services/api';
@@ -66,6 +66,14 @@ export function ProductsPage() {
   const [wizardStep, setWizardStep] = useState(1);
   const [stockInitial, setStockInitial] = useState('');
   const [bomRows, setBomRows] = useState<Array<{ material_id: string; quantity: string }>>([]);
+  const bomTotalCost = useMemo(() => {
+    return bomRows.reduce((sum, row) => {
+      if (!row.material_id || !row.quantity) return sum;
+      const mat = allMaterials.find(m => m.id === row.material_id);
+      if (!mat) return sum;
+      return sum + Number(row.quantity) * (mat.cost_per_unit || 0);
+    }, 0);
+  }, [bomRows, allMaterials]);
 
   // edit mode BOM
   const [showRecipes, setShowRecipes] = useState(false);
@@ -165,8 +173,8 @@ export function ProductsPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const IMAGE_MAX_WIDTH = 1200;
-  const IMAGE_QUALITY = 0.85;
+  const IMAGE_MAX_WIDTH = 800;
+  const IMAGE_QUALITY = 0.7;
 
   function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -249,7 +257,7 @@ export function ProductsPage() {
   function nextStep() {
     if (wizardStep === 1 && !validateBase()) return;
     setFieldErrors({});
-    setWizardStep(s => Math.min(s + 1, 3));
+    setWizardStep(s => Math.min(s + 1, 4));
   }
 
   function prevStep() {
@@ -259,6 +267,10 @@ export function ProductsPage() {
   async function handleSave() {
     if (!token || saving) return;
     if (!validateBase()) return;
+    if (productImage && productImage.length > 4 * 1024 * 1024) {
+      toast.error('Gambar terlalu besar setelah kompresi. Coba upload gambar lebih kecil.');
+      return;
+    }
     setSaving(true);
     try {
       if (editProduct) {
@@ -318,7 +330,12 @@ export function ProductsPage() {
       setShowModal(false);
       productsQuery.refetch();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Gagal simpan produk');
+      const msg = err instanceof Error ? err.message : 'Gagal simpan produk';
+      if (msg.includes('PAYLOAD_TOO_LARGE') || msg.includes('413') || msg.includes('Content Too Large')) {
+        toast.error('Gambar terlalu besar. Gunakan foto yang lebih kecil atau kompresi otomatis diperbaiki.');
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setSaving(false);
     }
@@ -385,7 +402,7 @@ export function ProductsPage() {
   }
 
   // ── Wizard step indicator ──
-  const wizardTabs = ['Informasi', 'Stok Awal', 'Bahan Baku'];
+  const wizardTabs = ['Informasi', 'Stok Awal', 'Bahan Baku', 'Harga Beli'];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -541,7 +558,7 @@ export function ProductsPage() {
                 {saving ? 'Menyimpan...' : 'Simpan'}
               </button>
             </>
-          ) : wizardStep === 3 ? (
+          ) : wizardStep === 4 ? (
             <>
               <button className="btn btn-secondary" onClick={prevStep}>
                 <ChevronLeft size={14} /> Kembali
@@ -661,19 +678,13 @@ export function ProductsPage() {
                 </span>
               )}
             </div>
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label">Satuan</label>
-                <select className="input" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })}>
-                  <option value="">— Pilih satuan —</option>
-                  {form.unit && !UNIT_OPTIONS.includes(form.unit as any) && <option value={form.unit}>{form.unit} (kustom)</option>}
-                  {UNIT_OPTIONS.map((u) => <option key={u} value={u}>{u}</option>)}
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Harga Beli</label>
-                <RupiahInput value={form.price_buy} onChange={(v) => setForm({ ...form, price_buy: v })} />
-              </div>
+            <div className="form-group">
+              <label className="form-label">Satuan</label>
+              <select className="input" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })}>
+                <option value="">— Pilih satuan —</option>
+                {form.unit && !UNIT_OPTIONS.includes(form.unit as any) && <option value={form.unit}>{form.unit} (kustom)</option>}
+                {UNIT_OPTIONS.map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
             </div>
             <div className="form-row">
               <div className="form-group">
@@ -716,6 +727,12 @@ export function ProductsPage() {
                 </div>
               </div>
             </div>
+            {editProduct && (
+              <div className="form-group">
+                <label className="form-label">Harga Beli (HPP)</label>
+                <RupiahInput value={form.price_buy} onChange={(v) => setForm({ ...form, price_buy: v })} />
+              </div>
+            )}
             <div className="form-group">
               <label className="form-label">Stok Minimal</label>
               <input className="input" type="number" value={form.stock_min} onChange={(e) => setForm({ ...form, stock_min: e.target.value })} placeholder="Untuk peringatan stok menipis" />
@@ -874,6 +891,50 @@ export function ProductsPage() {
                 Belum ada bahan baku. <a href="/stock/materials" style={{ fontWeight: 700 }}>Tambahkan material</a> terlebih dahulu.
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── Step 4: Harga Beli ── */}
+        {!editProduct && wizardStep === 4 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '0.5rem 0' }}>
+            <div className="card card-p" style={{ background: 'rgba(59,130,246,0.05)', border: '1px solid var(--primary)', fontSize: '0.85rem' }}>
+              <div style={{ fontWeight: 700, marginBottom: '0.5rem' }}>Ringkasan Biaya BOM</div>
+              {bomRows.length > 0 ? (
+                <>
+                  {bomRows.map((row, i) => {
+                    const mat = allMaterials.find(m => m.id === row.material_id);
+                    if (!mat) return null;
+                    return (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.15rem 0' }}>
+                        <span>{mat.name} × {row.quantity} {mat.unit}</span>
+                        <span style={{ fontWeight: 600 }}>{fmtRp(Number(row.quantity) * (mat.cost_per_unit || 0))}</span>
+                      </div>
+                    );
+                  })}
+                  <div style={{ borderTop: '1px solid var(--border)', margin: '0.5rem 0', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
+                    <span>Total Biaya Bahan</span>
+                    <span>{fmtRp(bomTotalCost)}</span>
+                  </div>
+                </>
+              ) : (
+                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '0.5rem 0' }}>
+                  Belum ada resep BOM. Biaya bahan tidak dihitung.
+                </p>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0', color: 'var(--text-muted)' }}>
+                <span>Harga Jual</span>
+                <span style={{ fontWeight: 600, color: 'var(--text)' }}>{form.price_sell ? fmtRp(Number(form.price_sell)) : '—'}</span>
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Harga Beli (HPP)</label>
+              <RupiahInput value={form.price_buy} onChange={(v) => setForm({ ...form, price_buy: v })} />
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
+                {bomTotalCost > 0
+                  ? `💡 Minimal Rp ${bomTotalCost.toLocaleString('id-ID')} (total biaya bahan)`
+                  : '💡 Harga beli digunakan untuk perhitungan HPP di laporan laba rugi'}
+              </span>
+            </div>
           </div>
         )}
       </Modal>

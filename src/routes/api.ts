@@ -1657,6 +1657,9 @@ router.get('/api/stock/product-stats', stockAuth, async (req: StockRequest, res:
 router.get('/api/stock/product-sales', stockAuth, async (req: StockRequest, res: Response) => {
   const userId = req.stockUser!.id;
   const days = Math.min(365, parseInt(req.query.days as string) || 30);
+  const cacheKey = `product-sales:${userId}:${days}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) { apiSuccess(res, cached); return; }
   const since = new Date(Date.now() - days * DAY_MS).toISOString();
   try {
     const { data: sales } = (await supabase
@@ -1732,11 +1735,13 @@ router.get('/api/stock/product-sales', stockAuth, async (req: StockRequest, res:
       totalProducts: products.length,
     };
 
-    apiSuccess(res, {
+    const salesData = {
       summary,
       products,
       byCategory: Object.values(byCategoryMap).sort((a: any, b: any) => b.revenue - a.revenue),
-    });
+    };
+    cacheSet(cacheKey, salesData, 60_000);
+    apiSuccess(res, salesData);
   } catch (e: any) {
     apiError(res, sanitizeError(e), ErrorCode.INTERNAL, 500);
   }
@@ -1744,8 +1749,11 @@ router.get('/api/stock/product-sales', stockAuth, async (req: StockRequest, res:
 
 router.get('/api/stock/laba-rugi', stockAuth, async (req: StockRequest, res: Response) => {
   const userId = req.stockUser!.id;
+  const days = Math.min(365, parseInt(req.query.days as string) || 30);
+  const cacheKey = `laba-rugi:${userId}:${days}:${(req.query.channel as string) || ''}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) { apiSuccess(res, cached); return; }
   try {
-    const days = Math.min(365, parseInt(req.query.days as string) || 30);
     const channel = (req.query.channel as string) || '';
     const endDate = new Date().toISOString();
     const startDate = new Date(Date.now() - days * DAY_MS).toISOString();
@@ -1769,7 +1777,7 @@ router.get('/api/stock/laba-rugi', stockAuth, async (req: StockRequest, res: Res
         }
       });
       const labaBersih = revenue - hpp - expense;
-      apiSuccess(res, {
+      const channelData = {
         rows: [
           { account_code: 'TRX', account_name: `Transaksi ${channel}`, account_type: 'revenue', total: revenue },
           { account_code: 'HPP', account_name: 'Harga Pokok Penjualan', account_type: 'cogs', total: hpp },
@@ -1780,7 +1788,9 @@ router.get('/api/stock/laba-rugi', stockAuth, async (req: StockRequest, res: Res
         totalExpense: expense,
         labaKotor: revenue - hpp,
         labaBersih,
-      });
+      };
+      cacheSet(cacheKey, channelData, 120_000);
+      apiSuccess(res, channelData);
       return;
     }
     const result = await accountingEngine.getLabaRugi(userId, startDate, endDate);
@@ -1788,6 +1798,7 @@ router.get('/api/stock/laba-rugi', stockAuth, async (req: StockRequest, res: Res
       apiError(res, result.error || 'Gagal memuat data', ErrorCode.INTERNAL, 500);
       return;
     }
+    cacheSet(cacheKey, result.data, 120_000);
     apiSuccess(res, result.data);
   } catch (e: any) {
     apiError(res, sanitizeError(e), ErrorCode.INTERNAL, 500);
@@ -2616,6 +2627,9 @@ router.get('/api/stock/dashboard/charts', stockAuth, async (req: StockRequest, r
   const userId = req.stockUser!.id;
   const days = Math.min(90, parseInt(req.query.days as string) || 30);
   const channel = (req.query.channel as string) || '';
+  const cacheKey = `charts:${userId}:${days}:${channel}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) { apiSuccess(res, cached); return; }
   try {
     const since = new Date(Date.now() - days * DAY_MS).toISOString();
     let query: any = supabase
@@ -2683,7 +2697,9 @@ router.get('/api/stock/dashboard/charts', stockAuth, async (req: StockRequest, r
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5);
 
-    apiSuccess(res, { labels, revenue, expense, expenseLabels, expenseValues, topProducts });
+    const chartData = { labels, revenue, expense, expenseLabels, expenseValues, topProducts };
+    cacheSet(cacheKey, chartData, 60_000);
+    apiSuccess(res, chartData);
   } catch (e: any) {
     apiError(res, sanitizeError(e), ErrorCode.INTERNAL, 500);
   }

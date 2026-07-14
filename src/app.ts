@@ -22,12 +22,23 @@ fs.mkdirSync = function (this: any, p: any, options?: any) {
 const app = express();
 
 app.use(buildSessionMiddleware());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 app.use((req, _res, next) => {
   if (req.url !== req.url.replace(/\/\/+/g, '/')) req.url = req.url.replace(/\/\/+/g, '/');
   next();
+});
+
+app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({
+      success: false,
+      error: 'Ukuran file terlalu besar. Maksimal 2MB setelah kompresi.',
+      code: 'PAYLOAD_TOO_LARGE',
+    });
+  }
+  next(err);
 });
 
 app.use(healthRoutes);
