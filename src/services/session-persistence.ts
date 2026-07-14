@@ -3,7 +3,7 @@ import path from 'path';
 import { state, addLog, getSupabase } from '../config/state';
 import { SESSION_DIR_WHITELIST, SESSION_DIR_BLACKLIST, SESSION_BASE_DIR, SESSION_MAX_AGE } from '../config/constants';
 
-const MAX_FILE_SIZE = 1_000_000; // skip files > 1MB
+const MAX_FILE_SIZE = 10_000_000; // skip files > 10MB
 
 interface DirEntry {
   path: string;
@@ -75,7 +75,7 @@ async function restoreSessionDirFromDB(userId: string): Promise<boolean> {
       .from('wa_session_backup')
       .select('manifest, updated_at')
       .eq('user_id', userId)
-      .single() as any;
+      .maybeSingle() as any;
     if (error || !data || !data.manifest) return false;
 
     if (data.updated_at) {

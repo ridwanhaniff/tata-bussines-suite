@@ -138,6 +138,13 @@ export function ProductsPage() {
     }
   }, [form.name]);
 
+  // auto-populate price_buy dengan bomTotalCost saat masuk step 4
+  useEffect(() => {
+    if (!editProduct && wizardStep === 4 && bomTotalCost > 0 && !form.price_buy) {
+      setForm(prev => ({ ...prev, price_buy: String(bomTotalCost) }));
+    }
+  }, [wizardStep, bomTotalCost]);
+
   const filteredTagChannels = activeChannels.filter(
     (ch: string) => !form.channels.includes(ch) &&
       ch.toLowerCase().includes(tagChannelInput.toLowerCase()),
@@ -921,6 +928,12 @@ export function ProductsPage() {
               ) : (
                 <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '0.5rem 0' }}>
                   Belum ada resep BOM. Biaya bahan tidak dihitung.
+                </p>
+              )}
+              {bomRows.length > 0 && bomTotalCost === 0 && (
+                <p style={{ color: 'var(--warning)', fontSize: '0.75rem', textAlign: 'center', padding: '0.25rem 0' }}>
+                  ⚠ Biaya bahan Rp 0 karena material belum memiliki harga.
+                  Atur harga material di menu Bahan Baku.
                 </p>
               )}
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0', color: 'var(--text-muted)' }}>

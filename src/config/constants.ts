@@ -23,7 +23,7 @@ export const CACHE_TTL_DEFAULT = 30_000;
 export const CACHE_MAX_SIZE = 500;
 
 // Session
-export const SESSION_MAX_AGE = 30 * DAY_MS;
+export const SESSION_MAX_AGE = 90 * DAY_MS;
 
 // Broadcast
 export const BROADCAST_DEDUP_WINDOW = 10 * MINUTE_MS;

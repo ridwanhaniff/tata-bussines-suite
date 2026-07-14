@@ -234,6 +234,9 @@ export function StockMaterials() {
             <div className="form-group">
               <label className="form-label">Biaya per Satuan</label>
               <RupiahInput value={form.cost_per_unit} onChange={(v) => setForm({ ...form, cost_per_unit: v })} />
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.15rem', display: 'block' }}>
+                Diperlukan untuk perhitungan biaya BOM produk
+              </span>
             </div>
           </div>
           <div className="form-row">
