@@ -66,6 +66,16 @@ export function ProductsPage() {
   const [wizardStep, setWizardStep] = useState(1);
   const [stockInitial, setStockInitial] = useState('');
   const [bomRows, setBomRows] = useState<Array<{ material_id: string; quantity: string }>>([]);
+
+  const materialsQuery = useQuery({
+    queryKey: ['materials-for-recipes', token],
+    queryFn: () => bomApi.listMaterials(token!),
+    enabled: !!token,
+    staleTime: 30_000,
+  });
+
+  const allMaterials = (materialsQuery.data?.materials ?? []) as BomMaterial[];
+
   const bomTotalCost = useMemo(() => {
     return bomRows.reduce((sum, row) => {
       if (!row.material_id || !row.quantity) return sum;
@@ -96,13 +106,6 @@ export function ProductsPage() {
     select: (data) => data.settings?.active_channels ?? ['offline', 'whatsapp', 'shopee', 'tokopedia', 'lazada', 'tiktok shop'],
   });
 
-  const materialsQuery = useQuery({
-    queryKey: ['materials-for-recipes', token],
-    queryFn: () => bomApi.listMaterials(token!),
-    enabled: !!token,
-    staleTime: 30_000,
-  });
-
   const recipesQuery = useQuery({
     queryKey: ['recipes', token, editProduct?.id],
     queryFn: () => bomApi.listRecipes(token!, editProduct?.id || undefined),
@@ -113,7 +116,6 @@ export function ProductsPage() {
 
   const products = productsQuery.data ?? [];
   const activeChannels = channelsQuery.data ?? [];
-  const allMaterials = (materialsQuery.data?.materials ?? []) as BomMaterial[];
   const productRecipes = recipesQuery.data as BomRecipe[] | undefined;
   const loading = productsQuery.isPending || channelsQuery.isPending;
   const error = productsQuery.isError || channelsQuery.isError;
