@@ -255,10 +255,19 @@ async function sendUpgradeNotification(
     logInfo(`[NOTIF] Upgrade notification → ${storeName} (${userId}) [${status}]`);
     return true;
   } catch (err: any) {
-    logError(`[ERROR] sendUpgradeNotification [${userId}]: ${err.stack || err.message}`);
+    const errStack = err?.stack || err?.message || String(err);
+    logError(`[ERROR] sendUpgradeNotification [${userId}]: ${errStack}`);
+    if (errStack.includes('ExecutionContext') || errStack === 't: t') {
+      if (state.clientReady) {
+        state.clientReady = false;
+        logWarn('[WA] sendUpgradeNotification — page execution context destroyed, set clientReady=false');
+      }
+    }
     return false;
   }
 }
+
+const upgradeRetries = new Map<string, number>();
 
 async function checkAndNotifyUpgrades(client: any): Promise<void> {
   if (!client) {
@@ -285,7 +294,19 @@ async function checkAndNotifyUpgrades(client: any): Promise<void> {
     if (!users || users.length === 0) return;
     for (const u of users) {
       const sent = await sendUpgradeNotification(client, u.id, u.store_name, u.status, u.subscription_expires_at);
-      if (sent) await supabase.from('users').update({ upgrade_notified: true }).eq('id', u.id);
+      if (sent) {
+        await supabase.from('users').update({ upgrade_notified: true }).eq('id', u.id);
+        upgradeRetries.delete(u.id);
+      } else {
+        const retry = (upgradeRetries.get(u.id) || 0) + 1;
+        if (retry >= 3) {
+          logWarn(`[NOTIF] Marking ${u.store_name} (${u.id}) upgrade_notified=true after ${retry} failed attempts`);
+          await supabase.from('users').update({ upgrade_notified: true }).eq('id', u.id);
+          upgradeRetries.delete(u.id);
+        } else {
+          upgradeRetries.set(u.id, retry);
+        }
+      }
       await sleep(300);
     }
   } catch (err: any) {

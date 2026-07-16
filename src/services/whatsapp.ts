@@ -25,6 +25,7 @@ function resetWaRetryCount(): void {
 async function safeDestroyClient(): Promise<void> {
   if (!state.waClient) return;
   if (sessionBackupTimer) { clearInterval(sessionBackupTimer); sessionBackupTimer = null; }
+  if (healthCheckTimer) { clearInterval(healthCheckTimer); healthCheckTimer = null; }
   state.waDestroyLock = true;
   try {
     await Promise.race([
@@ -55,6 +56,7 @@ function killChromeProcesses(): void {
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let sessionBackupTimer: ReturnType<typeof setInterval> | null = null;
 let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
+let healthCheckTimer: ReturnType<typeof setInterval> | null = null;
 let watchdogExtendedCount = 0;
 let lastDisconnectAt = 0;
 let lastDisconnectAlert = 0;
@@ -193,6 +195,25 @@ async function initWhatsApp(): Promise<void> {
           state.clientReady = false;
         });
       }
+
+      // Periodic health check — detect zombie page where evaluate silently fails
+      if (healthCheckTimer) clearInterval(healthCheckTimer);
+      healthCheckTimer = setInterval(async () => {
+        try {
+          const pp = (client as any).pupPage;
+          if (!pp || pp.isClosed()) {
+            addLog('warn', '[WA] Health check — page closed, scheduling reconnect');
+            state.clientReady = false;
+            safeDestroyClient().then(() => scheduleRetry(2000));
+            return;
+          }
+          await pp.evaluate('1+1');
+        } catch {
+          addLog('warn', '[WA] Health check — page evaluate failed, execution context destroyed');
+          state.clientReady = false;
+          safeDestroyClient().then(() => scheduleRetry(2000));
+        }
+      }, 60_000);
     });
 
     client.on('message', async (msg: any) => {
