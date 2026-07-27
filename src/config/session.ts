@@ -58,10 +58,11 @@ export function buildSessionMiddleware(): RequestHandler {
       connectionString: connUrl,
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
       max: 5,
+      family: 4,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000,
       keepAlive: true,
-    });
+    } as any);
 
     pgPool.on('error', (err: Error) => {
       addLog('error', `[SESSION DB] Unexpected error on idle client: ${err.message}`);

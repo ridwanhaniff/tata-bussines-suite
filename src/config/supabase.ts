@@ -36,7 +36,8 @@ if (dbUrl) {
     query_timeout: 15000,
     statement_timeout: 10000,
     allowExitOnIdle: false,
-  });
+    family: 4,
+  } as any);
   pgPool.on('error', (err: Error) => console.error('[DB POOL] Error:', err.message));
   pgPool.on('acquire', (_client: any) => {
     const poolSize = pgPool?.totalCount ?? 0;
