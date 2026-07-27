@@ -64,14 +64,14 @@ router.post('/admin/login', async (req, res) => {
     (req.session as any).save((err?: Error) => {
       if (err) {
         addLog('error', `[AUTH] Session save error: ${err.message}`);
-        res.status(500).json({ success: false });
+        res.status(500).json({ success: false, error: 'Gagal menyimpan session' });
         return;
       }
       res.json({ success: true, email: admin.email, role: admin.role });
     });
   } catch (e: any) {
     addLog('error', `[AUTH] Login error: ${e.message}`);
-    res.status(500).json({ success: false });
+    res.status(500).json({ success: false, error: 'Terjadi kesalahan server' });
   }
 });
 

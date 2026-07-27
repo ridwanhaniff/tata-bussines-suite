@@ -8,10 +8,11 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   });
 
   if (res.status === 401 || res.status === 403) {
+    const body = await res.json().catch(() => ({}));
     if (window.location.pathname !== '/login') {
       window.location.href = '/login';
     }
-    throw new Error('Unauthorized');
+    throw new Error(body.error || 'Unauthorized');
   }
 
   if (!res.ok) {
