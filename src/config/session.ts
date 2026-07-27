@@ -52,13 +52,7 @@ export function buildSessionMiddleware(): RequestHandler {
   }
 
   try {
-    let connUrl = process.env.DATABASE_URL;
-    if (connUrl.includes('supabase.co') && !connUrl.includes('pgbouncer=true')) {
-      connUrl = connUrl.replace(':5432/', ':6543/');
-      if (!connUrl.includes('?')) connUrl += '?pgbouncer=true';
-      else if (!connUrl.includes('pgbouncer=true')) connUrl += '&pgbouncer=true';
-      addLog('info', '[SESSION] Auto-rewritten DATABASE_URL to PgBouncer (port 6543)');
-    }
+    const connUrl = process.env.DATABASE_URL;
 
     const pgPool = new Pool({
       connectionString: connUrl,

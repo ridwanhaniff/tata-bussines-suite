@@ -25,12 +25,7 @@ const supabase: SupabaseClient = createClient(url, key, {
 let pgPool: PgPool | null = null;
 const dbUrl = process.env.DATABASE_URL;
 if (dbUrl) {
-  let connUrl = dbUrl;
-  if (connUrl.includes('supabase.co') && !connUrl.includes('pgbouncer=true')) {
-    connUrl = connUrl.replace(':5432/', ':6543/');
-    if (!connUrl.includes('?')) connUrl += '?pgbouncer=true';
-    else if (!connUrl.includes('pgbouncer=true')) connUrl += '&pgbouncer=true';
-  }
+  const connUrl = dbUrl;
   const poolMax = Math.min(50, Math.max(2, parseInt(process.env.DB_POOL_MAX || '20', 10)));
   pgPool = new Pool({
     connectionString: connUrl,
