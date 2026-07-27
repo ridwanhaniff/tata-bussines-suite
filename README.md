@@ -1,21 +1,11 @@
----
-title: Tata Business Suite
-emoji: 📦
-colorFrom: green
-colorTo: blue
-sdk: docker
-app_file: app.js
-pinned: false
----
-
-# Tata Business Suite v2.0.0
+﻿# Tata Business Suite v2.0.0
 
 Sistem otomasi manajemen stok dan integrasi WhatsApp bot berbasis AI untuk UKM Indonesia.
 
 ## Fitur
 
 - **WhatsApp Bot** — Catat transaksi masuk/keluar, cek stok, laporan harian via chat
-- **AI Intent Classification** — NLP untuk memahami pesan natural (OpenRouter multi-model)
+- **AI Intent Classification** — NLP untuk memahami pesan natural (Gemini / OpenRouter)
 - **OCR Struk** — Scan foto struk belanja via Google Cloud Vision
 - **Voice Note** — Transkripsi audio via Whisper (HuggingFace)
 - **Manajemen Stok** — Produk, BOM/packaging, opname, alert minimum stock
@@ -26,17 +16,33 @@ Sistem otomasi manajemen stok dan integrasi WhatsApp bot berbasis AI untuk UKM I
 
 ## Tech Stack
 
-- **Runtime:** Node.js 20+, Express 5
+- **Runtime:** Node.js 20+, Express 5, TypeScript (tsx)
 - **Database:** PostgreSQL via Supabase
-- **AI:** OpenRouter (Qwen, Nemotron, Llama)
-- **WA:** whatsapp-web.js
-- **Session:** express-session + pgSession
+- **AI:** Google Gemini / OpenRouter (Qwen, Nemotron, Llama)
+- **WA:** whatsapp-web.js + Puppeteer + Chromium
+- **Session:** express-session + pgSession (connect-pg-simple)
 - **Realtime:** Socket.IO
+- **Frontend:** React 19 + Vite + Zustand + TanStack Query
 
-## Setup
+## Deploy ke Railway (Rekomendasi)
+
+1. Fork repo ini ke GitHub
+2. Buat project baru di [Railway](https://railway.app) → "Deploy from GitHub repo"
+3. Railway otomatis deteksi `Dockerfile` dan build
+4. Set environment variables (lihat bagian di bawah)
+5. APP_URL: isi URL Railway kamu setelah deploy pertama (format: `https://xxx.up.railway.app`)
+
+```bash
+# Persistent storage untuk WhatsApp session — tambahkan Volume di Railway:
+# Mount path: /data
+```
+
+## Setup Local
 
 1. Clone & install:
 ```bash
+git clone https://github.com/ridwanhaniff/tata-bussines-suite.git
+cd tata-bussines-suite
 npm install
 ```
 
@@ -49,8 +55,8 @@ cp .env.example .env
 
 4. Start:
 ```bash
-npm start        # Production
-npm run dev      # Development (nodemon)
+npm run dev      # Development (backend + frontend)
+npm start        # Production (tsx langsung)
 ```
 
 ## Environment Variables
@@ -59,67 +65,75 @@ npm run dev      # Development (nodemon)
 |---|---|---|
 | `SUPABASE_URL` | ✅ | URL project Supabase |
 | `SUPABASE_KEY` | ✅ | Service role key |
-| `DATABASE_URL` | ✅ | Connection string PostgreSQL |
+| `DATABASE_URL` | ✅ | Connection string PostgreSQL (untuk session) |
 | `SESSION_SECRET` | ✅ | Minimal 32 karakter random |
-| `ADMIN_USERNAME` | ✅ | Username dashboard admin |
-| `ADMIN_PASSWORD` | ✅ | Password dashboard admin |
-| `OPENROUTER_API_KEY` | ✅ | API key untuk AI NLP |
-| `GOOGLE_APPLICATION_CREDENTIALS` | ⬜ | Path file JSON Google Vision (OCR) |
-| `HF_TOKEN` | ⬜ | HuggingFace token (voice transcription) |
-| `PAYMENT_BANK` | ⬜ | Nama bank untuk info pembayaran |
-| `PAYMENT_ACCOUNT` | ⬜ | No rekening untuk info pembayaran |
+| `APP_URL` | ✅ | URL Railway kamu (untuk link WA dashboard) |
+| `GEMINI_API_KEY` | ✅* | Google Gemini API key (*atau OPENROUTER_API_KEY) |
+| `OPENROUTER_API_KEY` | ✅* | OpenRouter API key (alternatif Gemini) |
+| `GOOGLE_VISION_CREDENTIALS_JSON` | ⬜ | JSON key Google Vision (OCR struk, paste raw JSON) |
+| `HF_TOKEN` | ⬜ | HuggingFace token (voice transcription + backup) |
+| `HF_BACKUP_BUCKET` | ⬜ | HF Dataset repo untuk backup database |
+| `ADMIN_WA_NUMBER` | ⬜ | Nomor WA admin untuk notifikasi error darurat |
+| `PAYMENT_BANK` | ⬜ | Nama bank untuk info pembayaran WA |
+| `PAYMENT_ACCOUNT` | ⬜ | No rekening |
 | `PAYMENT_NAME` | ⬜ | Nama pemilik rekening |
+
+> ⚠️ **PORT** jangan diset manual — Railway inject otomatis via environment
 
 ## Scripts
 
 | Script | Keterangan |
 |---|---|
-| `npm start` | Jalankan production |
-| `npm run dev` | Jalankan development (nodemon) |
-| `npm test` | Jalankan unit test |
-| `npm run test:e2e` | Jalankan E2E dashboard test |
+| `npm start` | Jalankan production (tsx) |
+| `npm run dev` | Jalankan development (backend + frontend watch) |
+| `npm test` | Jalankan unit test (vitest) |
+| `npm run build:frontend` | Build Vite SPA ke public/dist |
+| `npm run typecheck` | TypeScript check tanpa compile |
+| `npm run seed:demo` | Seed data demo |
 
 ## Architecture
 
 ```
-index.js → src/app.js (Express + Socket.IO)
+index.js → src/index.ts (server entry)
+  src/app.ts (Express + Socket.IO setup)
   ├── routes/
-  │   ├── api.js        — REST endpoints
-  │   ├── auth.js       — Login/logout
-  │   └── health.js     — Health check
+  │   ├── api.ts        — REST endpoints (2800+ baris)
+  │   ├── auth.ts       — Login/logout
+  │   └── health.ts     — Health check /ping
   ├── handlers/
-  │   ├── message.js    — WA message handler (orchestrator)
-  │   ├── stock-handler.js
-  │   ├── invoice-handler.js
-  │   └── onboarding.js
+  │   ├── message.ts    — WA message handler (orchestrator)
+  │   └── invoice-handler.ts
   ├── services/
-  │   ├── whatsapp.js          — WA client
-  │   ├── session-persistence.js
-  │   ├── circuit-breaker.js
-  │   └── emergency.js
+  │   ├── whatsapp.ts          — WA client + Puppeteer
+  │   ├── session-persistence.ts
+  │   ├── dialog-state.service.ts
+  │   └── emergency.ts
   ├── utils/
-  │   ├── geminiRouter.js      — AI intent classification
-  │   ├── chatbot.js           — Conversational AI
-  │   ├── mediaProcessor.js    — OCR & voice transcription
-  │   ├── accountingEngine.js  — Double-entry accounting
-  │   ├── transactionRecorder.js
-  │   ├── stockManager.js
-  │   └── helpers.js
+  │   ├── geminiRouter.ts      — AI intent classification
+  │   ├── mediaProcessor.ts    — OCR & voice transcription
+  │   ├── accountingEngine.ts  — Double-entry accounting
+  │   ├── transactionRecorder.ts
+  │   ├── stockManager.ts
+  │   └── helpers.ts
   ├── config/
-  │   ├── supabase.js
-  │   ├── session.js
-  │   └── state.js
-  ├── jobs/
-  │   └── scheduler.js
-  └── middleware/
-      └── auth.js
+  │   ├── supabase.ts
+  │   ├── session.ts
+  │   ├── state.ts
+  │   ├── constants.ts
+  │   └── keywords.ts
+  └── jobs/
+      ├── scheduler.ts   — Cron: laporan harian, alert stok
+      ├── backup.ts      — Backup DB ke HF bucket
+      └── queue.service.ts
 ```
 
 ## Deployment
 
-Docker:
+### Railway (Docker)
+Railway otomatis baca `Dockerfile`. Tidak perlu `railway.json`.
+Tambahkan **Volume** di Railway → Mount path `/data` untuk persistent WhatsApp session.
+
+### Local Docker Compose
 ```bash
 docker compose up --build
 ```
-
-Supported platforms: Hugging Face Spaces (Docker), Railway.

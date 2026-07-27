@@ -1,12 +1,8 @@
 import { spawn } from 'child_process';
 import fs from 'fs';
 
-// HF Storage Bucket untuk backup database
-// Bucket name: nickridwan/tata-suite-storage
-// Upload via REST API: PUT https://huggingface.co/api/storage/{bucket_encoded}/{path}
-// CATATAN: API endpoint ini mungkin perlu diverifikasi — alternatif S3-compatible API
-//          di s3.hf.co/nickridwan (butuh S3 credentials terpisah).
-const BACKUP_BUCKET = 'nickridwan/tata-suite-storage';
+// HF Storage Bucket untuk backup database (dapat dikonfigurasi via HF_BACKUP_BUCKET)
+const BACKUP_BUCKET = process.env.HF_BACKUP_BUCKET || '';
 const BACKUP_DIR = '/data/backups';
 const API_BASE = 'https://huggingface.co/api/storage';
 
@@ -22,6 +18,10 @@ async function uploadToBucket(filePath: string, remotePath: string): Promise<boo
   const token = process.env.HF_TOKEN;
   if (!token) {
     console.error('[BACKUP] HF_TOKEN tidak diset — upload ke bucket gagal');
+    return false;
+  }
+  if (!BACKUP_BUCKET) {
+    console.error('[BACKUP] HF_BACKUP_BUCKET tidak diset — skip upload ke bucket');
     return false;
   }
 

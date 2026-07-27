@@ -2,6 +2,8 @@ import { addLog } from '../config/state';
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 const TEXT_MODELS = [
   'qwen/qwen3-coder:free',
@@ -236,13 +238,92 @@ async function callWithFallback(models: string[], messages: Message[], label: st
   throw lastError || new Error('All AI models failed');
 }
 
+async function callGeminiDirect(
+  promptText: string,
+  imageBuffer: Buffer | null,
+  mimeType: string,
+  label: string,
+): Promise<ClassificationResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    
+    const parts: any[] = [{ text: SYSTEM_PROMPT + '\n\nPesan user: "' + promptText + '"' }];
+    
+    if (imageBuffer) {
+      parts.push({
+        inlineData: {
+          mimeType: mimeType,
+          data: imageBuffer.toString('base64'),
+        },
+      });
+    }
+
+    const body = {
+      contents: [
+        {
+          role: 'user',
+          parts: parts,
+        },
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: responseSchema,
+        temperature: 0.1,
+      },
+    };
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!resp.ok) {
+      const errBody = await resp.text().catch(() => '');
+      const err = new Error(`Gemini API ${resp.status}: ${errBody.slice(0, 200)}`) as ExtendedError;
+      err.status = resp.status;
+      throw err;
+    }
+
+    const data: any = await resp.json();
+    const content = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!content) {
+      throw new Error('Gemini API: empty response content');
+    }
+
+    const jsonStr = content.trim();
+    return JSON.parse(jsonStr);
+  } catch (err) {
+    clearTimeout(timeout);
+    if ((err as Error).name === 'AbortError') {
+      throw new Error(`Gemini API: request timeout after ${REQUEST_TIMEOUT_MS}ms`);
+    }
+    throw err;
+  }
+}
+
 async function processMessageWithGemini(
   promptText: string,
   imageBuffer: Buffer | null = null,
   mimeType = 'image/jpeg',
 ): Promise<ClassificationResult> {
-  if (!OPENROUTER_API_KEY) {
-    throw new Error('OPENROUTER_API_KEY not set in environment');
+  if (!OPENROUTER_API_KEY && !GEMINI_API_KEY) {
+    throw new Error('Neither OPENROUTER_API_KEY nor GEMINI_API_KEY is set in environment');
+  }
+
+  const label = imageBuffer ? 'Vision/OCR' : 'Text classification';
+
+  if (GEMINI_API_KEY) {
+    addLog('info', `[AI-ROUTER] Using Gemini API directly (${GEMINI_MODEL})`);
+    return callGeminiDirect(promptText, imageBuffer, mimeType, label);
   }
 
   const userPrompt = `Pesan user: "${promptText}"`;
@@ -260,13 +341,13 @@ async function processMessageWithGemini(
         ],
       },
     ];
-    return callWithFallback(VISION_MODELS, messages, 'Vision/OCR');
+    return callWithFallback(VISION_MODELS, messages, label);
   } else {
     messages = [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userPrompt },
     ];
-    return callWithFallback(TEXT_MODELS, messages, 'Text classification');
+    return callWithFallback(TEXT_MODELS, messages, label);
   }
 }
 

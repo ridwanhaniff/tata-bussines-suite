@@ -365,14 +365,17 @@ async function findProductInMessage(userId: string, body: string): Promise<{ id:
 }
 
 function getDashboardUrl(): string {
-  return (process.env.APP_URL || 'https://nickridwan-tata-business-suite.hf.space').replace(/\/+$/, '');
+  return (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
 }
 
 const geminiCache = new Map<string, { result: any; ts: number }>();
 const GEMINI_CACHE_TTL = 24 * 60 * 60 * 1000;
 
 async function classifyTransactionWithGemini(text: string): Promise<any> {
-  if (!process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY === 'DUMMY_KEY') return null;
+  const hasAI =
+    (process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY !== 'DUMMY_KEY') ||
+    (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'DUMMY_KEY');
+  if (!hasAI) return null;
 
   const cacheKey = text.toLowerCase().trim().slice(0, 200);
   const cached = geminiCache.get(cacheKey);
@@ -662,7 +665,7 @@ async function handleTransaction(
 }
 
 async function handleDashboardRequest(msg: any, sender: string, user: any): Promise<boolean> {
-  const appUrl = (process.env.APP_URL || 'https://nickridwan-tata-business-suite.hf.space').replace(/\/+$/, '');
+  const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
 
   let { data: userData } = (await supabase
     .from('users')
@@ -705,7 +708,7 @@ async function handleDashboardRequest(msg: any, sender: string, user: any): Prom
 }
 
 async function handleNewToken(msg: any, sender: string, user: any): Promise<boolean> {
-  const appUrl = (process.env.APP_URL || 'https://nickridwan-tata-business-suite.hf.space').replace(/\/+$/, '');
+  const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
   const token = crypto.randomBytes(16).toString('hex');
   (await supabase
     .from('users')

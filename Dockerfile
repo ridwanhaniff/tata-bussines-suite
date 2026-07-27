@@ -1,6 +1,6 @@
 # ════════════════════════════════════════════════════════════
 # Tata Business Suite — Production Dockerfile
-# Target: Railway / HuggingFace Spaces / Cloud (NOT Nixpacks)
+# Target: Railway (Primary) / Docker Compose / Cloud
 # Node.js 20 + Chromium for whatsapp-web.js
 # ════════════════════════════════════════════════════════════
 
@@ -69,16 +69,18 @@ RUN npm install -g npm@11 \
 COPY . .
 
 # ── 4. Memory Limit (before build) ─────────────────────────────
-# 320MB agar masih ada ~192MB untuk Chromium (~150-300MB) + OS
-# dalam total 512MB RAM HF Space
-ENV NODE_OPTIONS="--max-old-space-size=320" \
+# Railway starter plan: 512MB RAM — gunakan 450MB untuk Node build
+# Chromium runtime ~150-300MB — total budget ~1GB di Railway Pro
+ENV NODE_OPTIONS="--max-old-space-size=450" \
     NODE_ENV=production
 
 # ── 5. Build Frontend (SPA) ────────────────────────────────────
 RUN npm run build:frontend
 
 # ── 6. Runtime Env ─────────────────────────────────────────────
-ENV PORT=7860 \
+# PORT diset oleh Railway secara dynamic — jangan hardcode!
+# Fallback 3000 untuk local Docker run
+ENV PORT=3000 \
     HOME=/tmp
 
 # ── 7. Permissions + Temp Directories ─────────────────────────
@@ -87,10 +89,12 @@ RUN chmod -R 777 /app \
     && chmod -R 777 /tmp
 
 # ── 8. Health Check ───────────────────────────────────────────
-HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
-    CMD node -e "fetch('http://localhost:7860/ping').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))" || exit 1
+# PORT dinamis — Railway inject via env sebelum container start
+HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \
+    CMD node -e "fetch('http://localhost:' + (process.env.PORT || '3000') + '/ping').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))" || exit 1
 
-EXPOSE 7860
+# Railway otomatis expose PORT yang diassign — EXPOSE hanya dokumentasi
+EXPOSE 3000
 
 # ── 9. Start ──────────────────────────────────────────────────
 CMD ["node", "index.js"]

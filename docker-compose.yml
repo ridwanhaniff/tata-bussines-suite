@@ -6,20 +6,25 @@ services:
     container_name: tata-business-bot
     restart: always
     ports:
-      - "7860:7860"
+      # LOCAL DEV: gunakan PORT 3000 (default Railway fallback)
+      # Ganti kiri (host) sesuai kebutuhan local
+      - "${PORT:-3000}:${PORT:-3000}"
     environment:
       - NODE_ENV=production
-      - PORT=7860
-      - NODE_OPTIONS=--max-old-space-size=512
+      - PORT=${PORT:-3000}
+      # Railway starter: 512MB RAM — naikan jika pakai Railway Pro
+      - NODE_OPTIONS=--max-old-space-size=450
     env_file:
       - .env
     volumes:
-      # Mount folder auth agar tidak perlu scan QR terus-menerus
+      # Mount folder auth agar tidak perlu scan QR terus-menerus (local dev)
       - ./.wwebjs_auth:/app/.wwebjs_auth
-    # Memory limit — prevent OOM crash on Railway/Cloud
+      # Persistent storage untuk session & backup (local dev)
+      - ./data:/data
+    # Memory limit — sesuaikan dengan plan Railway kamu
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 1.5G
         reservations:
           memory: 512M

@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
-// Server
-export const PORT: number = parseInt(process.env.PORT || '7860', 10);
+// Server — Railway inject PORT secara dynamic, fallback 3000 untuk local
+export const PORT: number = parseInt(process.env.PORT || '3000', 10);
 
 // Time constants (ms)
 export const DAY_MS = 24 * 60 * 60 * 1000;

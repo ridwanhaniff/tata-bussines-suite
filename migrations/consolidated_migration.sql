@@ -1,5 +1,5 @@
--- ============================================================
--- Tata Business Suite — Full Database Schema
+﻿-- ============================================================
+-- Tata Business Suite â€” Full Database Schema
 -- Execute in Supabase SQL Editor (pastikan sudah hapus semua tabel)
 -- ============================================================
 
@@ -9,7 +9,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements; -- optional
 
 
--- 1. ADMINS (dashboard admin auth — bukan Supabase Auth)
+-- 1. ADMINS (dashboard admin auth â€” bukan Supabase Auth)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS admins (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS users (
   id                          text PRIMARY KEY,
   store_name                  text NOT NULL DEFAULT 'Toko Saya',
   store_slug                  varchar(100),
-  status                      text NOT NULL DEFAULT 'demo',
+  status                      text NOT NULL DEFAULT 'demo' CHECK (status IN ('demo', 'pro', 'unlimited')),
   onboarding_status           text NOT NULL DEFAULT 'new_user',
   onboarding_completed_at     timestamptz,
   subscription_expires_at     timestamptz,
@@ -50,8 +50,7 @@ CREATE TABLE IF NOT EXISTS users (
   bank_account                text,
   bank_holder                 text,
   created_at                  timestamptz NOT NULL DEFAULT now(),
-  updated_at                  timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT chk_users_status CHECK (status IN ('demo', 'pro', 'unlimited'))
+  updated_at                  timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_store_slug ON users(store_slug) WHERE store_slug IS NOT NULL;
@@ -543,7 +542,7 @@ CREATE POLICY bdl_user_scope ON bom_deduction_logs
   USING (user_id = current_setting('app.user_id', true));
 
 
--- 23. TRANSACTION TYPE → COA MAPPING
+-- 23. TRANSACTION TYPE â†’ COA MAPPING
 -- ============================================================
 CREATE TABLE IF NOT EXISTS transaction_type_coa (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -817,3 +816,427 @@ $$;
 --
 -- Verify:
 -- SELECT * FROM admins;
+-- ============================================================
+-- Migration 006: Add accounts_payable (Hutang ke Supplier)
+-- Execute di Supabase SQL Editor
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS accounts_payable (
+  id              bigserial PRIMARY KEY,
+  user_id         text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  nama_supplier   text NOT NULL,
+  nominal_hutang  numeric NOT NULL DEFAULT 0,
+  jumlah_dibayar  numeric NOT NULL DEFAULT 0,
+  status_lunas    boolean NOT NULL DEFAULT false,
+  jatuh_tempo     timestamptz,
+  deskripsi       text,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ap_user ON accounts_payable(user_id);
+CREATE INDEX IF NOT EXISTS idx_ap_jatuh_tempo ON accounts_payable(user_id, jatuh_tempo) WHERE status_lunas = false;
+
+ALTER TABLE accounts_payable ENABLE ROW LEVEL SECURITY;
+CREATE POLICY ap_user_scope ON accounts_payable
+  FOR ALL
+  USING (user_id = current_setting('app.user_id', true));
+
+-- Add updated_at trigger
+CREATE OR REPLACE FUNCTION update_ap_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_ap_updated_at ON accounts_payable;
+CREATE TRIGGER trg_ap_updated_at
+  BEFORE UPDATE ON accounts_payable
+  FOR EACH ROW
+  EXECUTE FUNCTION update_ap_updated_at();
+
+-- Sync to 000_full_schema.sql also
+-- ============================================================
+-- Fix admin RLS â€” bypass via SECURITY DEFINER function
+-- RLS policy admin_select_own pada admins menggunakan
+-- current_setting('app.admin_email', true) yang TIDAK PERNAH
+-- diset dari Supabase anon key â†’ query selalu return 0 row.
+-- Solusi: RPC function dengan SECURITY DEFINER (bypass RLS).
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION get_admin_by_email(p_email text)
+RETURNS TABLE (email text, password_hash text, role text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT a.email, a.password_hash, a.role
+  FROM admins a
+  WHERE a.email = p_email;
+END;
+$$;
+-- Inventory table for multi-warehouse stock tracking
+CREATE TABLE IF NOT EXISTS inventory (
+  id              bigserial PRIMARY KEY,
+  user_id         text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  product_id      bigint NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  quantity        numeric NOT NULL DEFAULT 0,
+  warehouse       text NOT NULL DEFAULT 'Utama',
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(user_id, product_id, warehouse)
+);
+
+-- Backfill inventory from existing products.stock_current
+INSERT INTO inventory (user_id, product_id, quantity, warehouse)
+SELECT user_id, id, stock_current, 'Utama'
+FROM products
+WHERE stock_current != 0
+ON CONFLICT (user_id, product_id, warehouse) DO NOTHING;
+-- ============================================
+-- Phase 1 & 4: Returns Support & Warehouses
+-- ============================================
+
+-- 1. Add discount & return fields to transactions
+ALTER TABLE transactions 
+  ADD COLUMN IF NOT EXISTS discount_amount numeric DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS discount_type text,
+  ADD COLUMN IF NOT EXISTS return_reason text,
+  ADD COLUMN IF NOT EXISTS original_transaction_id bigint REFERENCES transactions(id) ON DELETE SET NULL;
+
+-- 2. Add return reference types to stock_movements
+ALTER TABLE stock_movements
+  ADD COLUMN IF NOT EXISTS from_warehouse text,
+  ADD COLUMN IF NOT EXISTS to_warehouse text;
+
+-- 3. Warehouses table
+CREATE TABLE IF NOT EXISTS warehouses (
+  id              bigserial PRIMARY KEY,
+  user_id         text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name            text NOT NULL,
+  code            text NOT NULL,
+  is_default      boolean NOT NULL DEFAULT false,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(user_id, code)
+);
+
+-- Seed default warehouse for existing users
+INSERT INTO warehouses (user_id, name, code, is_default)
+SELECT DISTINCT id, 'Utama', 'MAIN', true FROM users
+ON CONFLICT DO NOTHING;
+
+-- 4. Stock opname tables (Phase 2)
+CREATE TABLE IF NOT EXISTS stock_opnames (
+  id              bigserial PRIMARY KEY,
+  user_id         text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  opname_date     timestamptz NOT NULL DEFAULT now(),
+  status          text NOT NULL DEFAULT 'draft',
+  warehouse       text NOT NULL DEFAULT 'Utama',
+  notes           text,
+  created_by      text,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  completed_at    timestamptz,
+  CONSTRAINT valid_opname_status CHECK (status IN ('draft', 'in_progress', 'completed', 'cancelled'))
+);
+
+CREATE TABLE IF NOT EXISTS opname_details (
+  id              bigserial PRIMARY KEY,
+  opname_id       bigint NOT NULL REFERENCES stock_opnames(id) ON DELETE CASCADE,
+  product_id      bigint NOT NULL REFERENCES products(id),
+  system_qty      numeric NOT NULL,
+  actual_qty      numeric NOT NULL,
+  notes           text,
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+-- 5. COA accounts for returns & adjustments
+INSERT INTO chart_of_accounts (code, name, type, description, is_system)
+VALUES 
+  ('4102', 'Retur Penjualan', 'revenue', 'Contra-revenue untuk retur penjualan (customer return)', true),
+  ('4103', 'Diskon Penjualan', 'revenue', 'Contra-revenue untuk diskon penjualan', true),
+  ('4104', 'Keuntungan Persediaan', 'revenue', 'Keuntungan dari inventory overage / selisih opname', true),
+  ('6101', 'Kerugian Persediaan', 'expense', 'Kerugian inventory shortage / selisih opname', true)
+ON CONFLICT (code) DO NOTHING;
+-- ============================================
+-- Migration 010: Rename accounting tables
+-- Code references 'payables' and 'receivables'
+-- but old migrations created 'accounts_payable' and 'debts'
+-- ============================================
+
+-- 1. Create payables (matching accounts_payable schema)
+CREATE TABLE IF NOT EXISTS payables (
+  id              bigserial PRIMARY KEY,
+  user_id         text NOT NULL,
+  nama_supplier   text NOT NULL,
+  nominal_hutang  numeric NOT NULL DEFAULT 0,
+  jumlah_dibayar  numeric NOT NULL DEFAULT 0,
+  status_lunas    boolean NOT NULL DEFAULT false,
+  jatuh_tempo     timestamptz,
+  deskripsi       text DEFAULT '',
+  transaction_id  bigint,
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+-- Copy data from accounts_payable if it exists
+INSERT INTO payables (id, user_id, nama_supplier, nominal_hutang, jumlah_dibayar, status_lunas, jatuh_tempo, deskripsi, created_at)
+SELECT id, user_id, nama_supplier, nominal_hutang, jumlah_dibayar, status_lunas, jatuh_tempo, deskripsi, created_at
+FROM accounts_payable
+WHERE NOT EXISTS (SELECT 1 FROM payables WHERE payables.id = accounts_payable.id);
+
+-- 2. Create receivables (matching debts schema)
+CREATE TABLE IF NOT EXISTS receivables (
+  id              bigserial PRIMARY KEY,
+  user_id         text NOT NULL,
+  transaction_id  bigint,
+  nama_pelanggan  text NOT NULL,
+  nominal_piutang numeric NOT NULL DEFAULT 0,
+  status_lunas    boolean NOT NULL DEFAULT false,
+  jatuh_tempo     timestamptz,
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+-- Copy data from debts if it exists
+INSERT INTO receivables (id, user_id, transaction_id, nama_pelanggan, nominal_piutang, status_lunas, jatuh_tempo, created_at)
+SELECT id, user_id, transaction_id, nama_pelanggan, nominal_piutang, status_lunas, jatuh_tempo, created_at
+FROM debts
+WHERE NOT EXISTS (SELECT 1 FROM receivables WHERE receivables.id = debts.id);
+-- ============================================================
+-- OPTIMASI DATABASE â€” UNIQUE CONSTRAINTS + INDEXES + BACKFILL
+-- ============================================================
+-- Run this in Supabase SQL Editor
+
+-- 1. HAPUS DUPLIKAT sebelum ADD UNIQUE (biar tidak error)
+DELETE FROM inventory a USING inventory b
+WHERE a.id < b.id
+  AND a.user_id = b.user_id
+  AND a.product_id = b.product_id
+  AND a.warehouse = b.warehouse;
+
+DELETE FROM warehouses a USING warehouses b
+WHERE a.id < b.id
+  AND a.user_id = b.user_id
+  AND a.code = b.code;
+
+-- 2. UNIQUE CONSTRAINTS
+ALTER TABLE inventory ADD UNIQUE (user_id, product_id, warehouse);
+ALTER TABLE warehouses ADD UNIQUE (user_id, code);
+
+-- 3. INDEXES (performa query)
+CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(user_id, type);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_user_id ON stock_movements(user_id);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_type ON stock_movements(user_id, type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_journal_entries_user ON journal_entries(user_id, entry_date DESC);
+CREATE INDEX IF NOT EXISTS idx_journal_lines_entry ON journal_lines(entry_id);
+CREATE INDEX IF NOT EXISTS idx_coa_user ON chart_of_accounts(user_id, code);
+CREATE INDEX IF NOT EXISTS idx_payables_user ON payables(user_id, status_lunas);
+CREATE INDEX IF NOT EXISTS idx_receivables_user ON receivables(user_id, status_lunas);
+CREATE INDEX IF NOT EXISTS idx_debts_user ON debts(user_id, status_lunas);
+CREATE INDEX IF NOT EXISTS idx_product_categories_user ON product_categories(user_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_lookup ON inventory(user_id, product_id, warehouse);
+CREATE INDEX IF NOT EXISTS idx_stock_alerts_user ON stock_alerts(user_id, resolved_at);
+CREATE INDEX IF NOT EXISTS idx_settings_lookup ON settings(key);
+
+-- 4. BACKFILL â€” inventory dari products yg punya stok
+INSERT INTO inventory (user_id, product_id, quantity, warehouse)
+SELECT p.user_id, p.id, p.stock_current, 'Utama'
+FROM products p
+WHERE p.stock_current != 0
+  AND NOT EXISTS (
+    SELECT 1 FROM inventory i
+    WHERE i.user_id = p.user_id AND i.product_id = p.id AND i.warehouse = 'Utama'
+  );
+
+-- 5. BACKFILL â€” payables dari accounts_payable (tabel lama)
+INSERT INTO payables (id, user_id, nama_supplier, nominal_hutang, jumlah_dibayar, status_lunas, jatuh_tempo, deskripsi, transaction_id, created_at)
+SELECT a.id, a.user_id, a.nama_supplier, a.nominal_hutang, a.jumlah_dibayar, a.status_lunas, a.jatuh_tempo, a.deskripsi, NULL, a.created_at
+FROM accounts_payable a
+WHERE NOT EXISTS (SELECT 1 FROM payables p WHERE p.id = a.id);
+
+-- 6. BACKFILL â€” receivables dari debts (tabel lama)
+INSERT INTO receivables (id, user_id, transaction_id, nama_pelanggan, nominal_piutang, status_lunas, jatuh_tempo, created_at)
+SELECT d.id, d.user_id, d.transaction_id, d.nama_pelanggan, d.nominal_piutang, d.status_lunas, d.jatuh_tempo, d.created_at
+FROM debts d
+WHERE NOT EXISTS (SELECT 1 FROM receivables r WHERE r.id = d.id);
+-- ============================================================
+-- MIGRATION 012 â€” FULL OPTIMIZATION & CLEANUP
+-- ============================================================
+-- Run this ONCE in Supabase SQL Editor (idempoten â€” aman di-run ulang)
+
+-- ============================================================
+-- BAGIAN 1: HAPUS DUPLIKAT
+-- ============================================================
+DELETE FROM inventory a USING inventory b
+WHERE a.id < b.id
+  AND a.user_id = b.user_id
+  AND a.product_id = b.product_id
+  AND a.warehouse = b.warehouse;
+
+DELETE FROM warehouses a USING warehouses b
+WHERE a.id < b.id
+  AND a.user_id = b.user_id
+  AND a.code = b.code;
+
+-- ============================================================
+-- BAGIAN 2: UNIQUE CONSTRAINTS
+-- ============================================================
+ALTER TABLE inventory ADD UNIQUE (user_id, product_id, warehouse);
+ALTER TABLE warehouses ADD UNIQUE (user_id, code);
+
+-- ============================================================
+-- BAGIAN 3: INDEXES
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(user_id, type);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_user_id ON stock_movements(user_id);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_type ON stock_movements(user_id, type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_journal_entries_user ON journal_entries(user_id, entry_date DESC);
+CREATE INDEX IF NOT EXISTS idx_journal_lines_entry ON journal_lines(entry_id);
+CREATE INDEX IF NOT EXISTS idx_coa_user ON chart_of_accounts(user_id, code);
+CREATE INDEX IF NOT EXISTS idx_payables_user ON payables(user_id, status_lunas);
+CREATE INDEX IF NOT EXISTS idx_receivables_user ON receivables(user_id, status_lunas);
+CREATE INDEX IF NOT EXISTS idx_product_categories_user ON product_categories(user_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_lookup ON inventory(user_id, product_id, warehouse);
+CREATE INDEX IF NOT EXISTS idx_stock_alerts_user ON stock_alerts(user_id, resolved_at);
+CREATE INDEX IF NOT EXISTS idx_settings_lookup ON settings(key);
+
+-- ============================================================
+-- BAGIAN 4: BACKFILL DATA KE TABEL BARU
+-- ============================================================
+INSERT INTO inventory (user_id, product_id, quantity, warehouse)
+SELECT p.user_id, p.id, p.stock_current, 'Utama'
+FROM products p
+WHERE p.stock_current != 0
+  AND NOT EXISTS (
+    SELECT 1 FROM inventory i
+    WHERE i.user_id = p.user_id AND i.product_id = p.id AND i.warehouse = 'Utama'
+  );
+
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'accounts_payable') THEN
+    INSERT INTO payables (id, user_id, nama_supplier, nominal_hutang, jumlah_dibayar, status_lunas, jatuh_tempo, deskripsi, transaction_id, created_at)
+    SELECT a.id, a.user_id, a.nama_supplier, a.nominal_hutang, a.jumlah_dibayar, a.status_lunas, a.jatuh_tempo, a.deskripsi, NULL, a.created_at
+    FROM accounts_payable a
+    WHERE NOT EXISTS (SELECT 1 FROM payables p WHERE p.id = a.id);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'debts') THEN
+    INSERT INTO receivables (id, user_id, transaction_id, nama_pelanggan, nominal_piutang, status_lunas, jatuh_tempo, created_at)
+    SELECT d.id, d.user_id, d.transaction_id, d.nama_pelanggan, d.nominal_piutang, d.status_lunas, d.jatuh_tempo, d.created_at
+    FROM debts d
+    WHERE NOT EXISTS (SELECT 1 FROM receivables r WHERE r.id = d.id);
+  END IF;
+END $$;
+
+-- ============================================================
+-- BAGIAN 5: DROP TABEL LAMA (hanya jika masih ada)
+-- ============================================================
+DROP TABLE IF EXISTS accounts_payable CASCADE;
+DROP TABLE IF EXISTS debts CASCADE;
+
+-- ============================================================
+-- BAGIAN 6: DROP KOLOM MATI
+-- ============================================================
+ALTER TABLE transactions DROP COLUMN IF EXISTS discount_amount;
+ALTER TABLE transactions DROP COLUMN IF EXISTS discount_type;
+
+ALTER TABLE products DROP COLUMN IF EXISTS price_grosir;
+ALTER TABLE products DROP COLUMN IF EXISTS min_qty_grosir;
+
+-- ============================================================
+-- BAGIAN 7: KONSOLIDASI BANK â€” pindah dari users ke user_profiles
+-- ============================================================
+
+DO $$ BEGIN
+  -- 7a & 7b: Hanya jalan jika kolom bank masih ada di users
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'users'
+    AND column_name = 'bank_name'
+  ) THEN
+    -- 7a. Backfill bank data dari users ke user_profiles
+    INSERT INTO user_profiles (user_id, bank_name, bank_account, bank_holder)
+    SELECT u.id, u.bank_name, u.bank_account, u.bank_holder
+    FROM users u
+    WHERE (u.bank_name IS NOT NULL OR u.bank_account IS NOT NULL OR u.bank_holder IS NOT NULL)
+      AND NOT EXISTS (SELECT 1 FROM user_profiles up WHERE up.user_id = u.id);
+
+    -- 7b. Update user_profiles jika users punya data lebih baru
+    UPDATE user_profiles up
+    SET
+      bank_name    = COALESCE(up.bank_name, u.bank_name),
+      bank_account = COALESCE(up.bank_account, u.bank_account),
+      bank_holder  = COALESCE(up.bank_holder, u.bank_holder)
+    FROM users u
+    WHERE up.user_id = u.id
+      AND (u.bank_name IS NOT NULL OR u.bank_account IS NOT NULL OR u.bank_holder IS NOT NULL);
+
+    -- 7c. Drop kolom bank dari users (sekarang cuma di user_profiles)
+    ALTER TABLE users DROP COLUMN IF EXISTS bank_name;
+    ALTER TABLE users DROP COLUMN IF EXISTS bank_account;
+    ALTER TABLE users DROP COLUMN IF EXISTS bank_holder;
+  END IF;
+END $$;
+
+-- 7d. Buat RPC upsert_user_profile agar code path primary bekerja
+CREATE OR REPLACE FUNCTION upsert_user_profile(
+  p_user_id TEXT,
+  p_bank_name TEXT DEFAULT NULL,
+  p_bank_account TEXT DEFAULT NULL,
+  p_bank_holder TEXT DEFAULT NULL,
+  p_admin_wa_number TEXT DEFAULT NULL
+) RETURNS void AS $$
+BEGIN
+  INSERT INTO user_profiles (user_id, bank_name, bank_account, bank_holder, admin_wa_number)
+  VALUES (p_user_id, p_bank_name, p_bank_account, p_bank_holder, p_admin_wa_number)
+  ON CONFLICT (user_id) DO UPDATE SET
+    bank_name        = COALESCE(EXCLUDED.bank_name, user_profiles.bank_name),
+    bank_account     = COALESCE(EXCLUDED.bank_account, user_profiles.bank_account),
+    bank_holder      = COALESCE(EXCLUDED.bank_holder, user_profiles.bank_holder),
+    admin_wa_number  = COALESCE(EXCLUDED.admin_wa_number, user_profiles.admin_wa_number);
+END;
+$$ LANGUAGE plpgsql;
+-- Add default_channel column to products table (missing from earlier migration)
+ALTER TABLE products ADD COLUMN IF NOT EXISTS default_channel text NOT NULL DEFAULT '';
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- Migration 014: Hapus fitur Transfer Gudang
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- Dijalankan manual via SQL editor (Supabase Dashboard)
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+-- 1. Hapus data transfer yang sudah ada (opsional â€” kalau mau bersih)
+-- DELETE FROM stock_movements WHERE reference_type = 'warehouse_transfer';
+
+-- 2. Hapus kolom from_warehouse / to_warehouse dari stock_movements
+ALTER TABLE stock_movements DROP COLUMN IF EXISTS from_warehouse;
+ALTER TABLE stock_movements DROP COLUMN IF EXISTS to_warehouse;
+
+-- 3. Hapus tabel warehouses
+DROP TABLE IF EXISTS warehouses;
+
+-- 4. Hapus semua baris di inventory yang bukan warehouse 'Utama'
+--    (data transfer mungkin ada di warehouse lain)
+-- DELETE FROM inventory WHERE warehouse != 'Utama';
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- Migration 015: Tambah product_id di bom_recipes
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- Kolom NULL = resep berlaku untuk SEMUA produk (backward compat)
+-- Kolom terisi = resep spesifik untuk produk tertentu
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+ALTER TABLE bom_recipes ADD COLUMN IF NOT EXISTS product_id bigint REFERENCES products(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_br_product ON bom_recipes(product_id);
