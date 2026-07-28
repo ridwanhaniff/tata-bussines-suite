@@ -626,7 +626,7 @@ export async function seedDemo(pool: Pool | null = pgPool) {
 
     console.log(`[SEED] Total ${journalCount} journal entries posted`);
 
-    const baseUrl = process.env.PUBLIC_URL || 'http://localhost:7860';
+    const baseUrl = process.env.PUBLIC_URL || 'https://tata-suite.up.railway.app';
     console.log('\n═══════════════════════════════════════════');
     console.log('  ✅ DEMO USER BERHASIL DI-SEED');
     console.log('═══════════════════════════════════════════');

@@ -365,7 +365,7 @@ async function findProductInMessage(userId: string, body: string): Promise<{ id:
 }
 
 function getDashboardUrl(): string {
-  return (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
+  return (process.env.APP_URL || 'https://tata-suite.up.railway.app').replace(/\/+$/, '');
 }
 
 const geminiCache = new Map<string, { result: any; ts: number }>();
@@ -665,7 +665,7 @@ async function handleTransaction(
 }
 
 async function handleDashboardRequest(msg: any, sender: string, user: any): Promise<boolean> {
-  const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
+  const appUrl = (process.env.APP_URL || 'https://tata-suite.up.railway.app').replace(/\/+$/, '');
 
   let { data: userData } = (await supabase
     .from('users')
@@ -708,7 +708,7 @@ async function handleDashboardRequest(msg: any, sender: string, user: any): Prom
 }
 
 async function handleNewToken(msg: any, sender: string, user: any): Promise<boolean> {
-  const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
+  const appUrl = (process.env.APP_URL || 'https://tata-suite.up.railway.app').replace(/\/+$/, '');
   const token = crypto.randomBytes(16).toString('hex');
   (await supabase
     .from('users')

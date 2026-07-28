@@ -592,7 +592,7 @@ async function checkStockAlerts(client: any): Promise<void> {
             msg += `⚠️ *${p.name}* (${p.sku})\n   Stock: ${stockManager.formatQty(p.stock_current, p.unit)} ${p.unit} (min: ${stockManager.formatQty(p.stock_min, p.unit)})\n\n`;
           }
         });
-        const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
+        const appUrl = (process.env.APP_URL || 'https://tata-suite.up.railway.app').replace(/\/+$/, '');
         if (user.dashboard_token) {
           const slug = user.store_slug || userId.replace('@', '%40');
           msg += `📊 Kelola stok di:\n${appUrl}/stock/${slug}?token=${user.dashboard_token}`;
@@ -925,7 +925,7 @@ async function sendDailyCombined(client: any, userId: string, storeName: string,
       topProducts.length > 0
         ? topProducts.map(([name, qty]) => `  ${name} — ${qty} pcs`).join('\n')
         : '  Belum ada';
-    const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
+    const appUrl = (process.env.APP_URL || 'https://tata-suite.up.railway.app').replace(/\/+$/, '');
     const slug = storeSlug || userId.replace('@', '%40');
     const msg = `📊 *Laporan Harian — ${storeName}*\n${'─'.repeat(26)}\n🟢 Pemasukan : ${formatRupiah(masuk)}\n🔴 Pengeluaran : ${formatRupiah(keluar)}${'─'.repeat(26)}\n${saldo >= 0 ? `💰 *Saldo: ${formatRupiah(saldo)}*` : `🔴 *Defisit: -${formatRupiah(Math.abs(saldo))}*`}\n\n📈 *Laba Bersih: ${formatRupiah(laba)}*\n\n🛒 *SUMBER PENJUALAN:*\n${channelLines}\n\n📦 *PRODUK TERLARIS:*\n${productLines}\n\n📋 ${trans.length} transaksi hari ini\n\nDetail: ${appUrl}/stock/${slug}`;
     await client.sendMessage(userId, msg);

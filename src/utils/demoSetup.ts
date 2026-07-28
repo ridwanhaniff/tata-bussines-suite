@@ -16,7 +16,7 @@ export async function setupDemoAccount() {
     .eq('store_slug', 'demo')
     .maybeSingle()) as any;
   if (existing) {
-    const baseUrl = process.env.PUBLIC_URL || 'http://localhost:7860';
+    const baseUrl = process.env.PUBLIC_URL || 'https://tata-suite.up.railway.app';
     return {
       success: true,
       exists: true,
@@ -568,7 +568,7 @@ export async function setupDemoAccount() {
       if (closingJ.success) journalCount++;
     }
 
-    const baseUrl = process.env.PUBLIC_URL || 'http://localhost:7860';
+    const baseUrl = process.env.PUBLIC_URL || 'https://tata-suite.up.railway.app';
     return {
       success: true,
       exists: false,

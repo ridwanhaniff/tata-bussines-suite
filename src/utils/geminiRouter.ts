@@ -171,7 +171,7 @@ async function callOpenRouter(model: string, messages: Message[]): Promise<any> 
       headers: {
         Authorization: `Bearer ${OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.APP_URL || 'https://localhost',
+        'HTTP-Referer': process.env.APP_URL || 'https://tata-suite.up.railway.app',
         'X-Title': 'Tata Business Suite',
       },
       body: JSON.stringify(body),
