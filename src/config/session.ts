@@ -1,7 +1,10 @@
 import type { RequestHandler } from 'express';
 import session from 'express-session';
 import { Pool } from 'pg';
+import dns from 'dns';
 import { addLog } from './state';
+
+dns.setDefaultResultOrder('ipv4first');
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pgSession: (s: typeof session) => any = require('connect-pg-simple');

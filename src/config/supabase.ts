@@ -1,6 +1,9 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Pool, type Pool as PgPool } from 'pg';
+import dns from 'dns';
 import dotenv from 'dotenv';
+
+dns.setDefaultResultOrder('ipv4first');
 
 dotenv.config();
 
