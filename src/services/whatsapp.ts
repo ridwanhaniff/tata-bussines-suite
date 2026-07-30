@@ -2,7 +2,7 @@ import { Client, LocalAuth } from 'whatsapp-web.js';
 import qrcodeWeb from 'qrcode';
 import { state, addLog, setIO, getIO, getSupabase } from '../config/state';
 import { WA_MAX_RETRIES, WA_BASE_DELAY, WA_MAX_DELAY, SESSION_BASE_DIR } from '../config/constants';
-import { saveSessionDirToDB } from './session-persistence';
+import { saveSessionDirToDB, restoreSessionDirFromDB } from './session-persistence';
 import { sendEmergencyBroadcast } from './emergency';
 
 let ioRef: any = null;
@@ -85,14 +85,39 @@ async function initWhatsApp(): Promise<void> {
     const fs = require('fs');
     const path = require('path');
 
-    // Remove Chrome lock files to avoid "browser is already running" error
-    const lockFiles = ['SingletonLock', 'SingletonSocket', 'SingletonCookie'];
-    for (const file of lockFiles) {
-      const fp = path.join(sessionDir, file);
-      try { fs.unlinkSync(fp); } catch { }
+    // 1. Hapus semua lock file Chromium dari sessionDir & subfolder
+    const lockFiles = [
+      'SingletonLock', 'SingletonSocket', 'SingletonCookie',
+      'SingletonV2', 'SingletonV2Lock', 'chromium_debug.log',
+    ];
+    function removeLockFiles(dir: string): void {
+      if (!fs.existsSync(dir)) return;
+      for (const file of lockFiles) {
+        const fp = path.join(dir, file);
+        try { fs.unlinkSync(fp); } catch { }
+      }
+      // Rekursif ke subfolder
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory() && entry.name !== '.' && entry.name !== '..') {
+            removeLockFiles(path.join(dir, entry.name));
+          }
+        }
+      } catch { }
     }
+    removeLockFiles(sessionDir);
 
-    const hasSession = fs.existsSync(sessionDir);
+    // 2. Restore session WhatsApp dari DB backup sebelum Chromium launch
+    //    Ini memastikan file auth tersedia walau folder pernah dihapus penuh
+    try {
+      const restored = await restoreSessionDirFromDB('default');
+      if (restored) {
+        addLog('info', '[WA] Session WhatsApp berhasil direstore dari DB');
+      }
+    } catch (err: any) {
+      addLog('warn', `[WA] Restore session dari DB gagal (non-fatal): ${err.message}`);
+    }
 
     const puppeteerOpts: Record<string, any> = {
       headless: true,
@@ -274,21 +299,46 @@ async function initWhatsApp(): Promise<void> {
     }
     watchdogTimer = setTimeout(watchdogCheck, WA_WATCHDOG_TIMEOUT);
 
-    client.initialize().catch((err: Error) => {
+    client.initialize().catch(async (err: Error) => {
       state.isInitializing = false;
       state.botStatus = 'ERROR';
       addLog('error', `[WA] initialize failed (async): ${err.message}`);
+
+      // Deteksi error lock file Chromium → nuke sessionDir penuh + restore dari DB
+      const isLockError =
+        err.message?.toLowerCase().includes('process_singleton') ||
+        err.message?.includes('profile appears to be in use') ||
+        err.message?.includes('lockfile') ||
+        err.message?.includes('SingLock');
+
+      if (isLockError) {
+        addLog('warn', `[WA] Lock file error terdeteksi — menghapus sessionDir penuh & restore dari DB`);
+        try {
+          const fs = require('fs');
+          if (fs.existsSync(sessionDir)) {
+            fs.rmSync(sessionDir, { recursive: true, force: true });
+            addLog('info', '[WA] sessionDir dihapus total karena lock conflict');
+          }
+          const restored = await restoreSessionDirFromDB('default');
+          if (restored) {
+            addLog('info', '[WA] Session berhasil direstore setelah cleanup paksa');
+          }
+        } catch (cleanErr: any) {
+          addLog('error', `[WA] Cleanup/restore setelah lock error gagal: ${cleanErr.message}`);
+        }
+      }
+
       if (state.waRetryCount <= WA_MAX_RETRIES) {
-        const delay = getWaRetryDelay();
+        const delay = isLockError ? 3000 : getWaRetryDelay();
         addLog('info', `[WA] Reconnect attempt ${state.waRetryCount}/${WA_MAX_RETRIES} in ${Math.round(delay / 1000)}s`);
-        safeDestroyClient().then(() => scheduleRetry(delay));
+        await safeDestroyClient();
+        scheduleRetry(delay);
       } else {
         addLog('error', `[WA] Max retry (${WA_MAX_RETRIES}) reached`);
         sendEmergencyBroadcast(`WhatsApp gagal konek setelah ${WA_MAX_RETRIES} kali percobaan`).catch(() => {});
-        safeDestroyClient().then(() => {
-          addLog('info', '[WA] Full reset scheduled in 60s');
-          setTimeout(() => { state.waRetryCount = 0; state.emergencySent = false; initWhatsApp(); }, 60_000);
-        });
+        await safeDestroyClient();
+        addLog('info', '[WA] Full reset scheduled in 60s');
+        setTimeout(() => { state.waRetryCount = 0; state.emergencySent = false; initWhatsApp(); }, 60_000);
       }
     });
   } catch (err: any) {
